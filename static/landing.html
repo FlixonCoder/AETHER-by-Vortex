@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VORTEX — Autonomous Satellite Mission Ops</title>
+<style>
+:root{
+  --accent:#25d6f5; --bg:#040a18; --panel:#0a1428; --line:#1c2c4d;
+  --text:#dbe6f5; --muted:#7288a8; --green:#4ade80; --amber:#fbbf24;
+  --red:#f87171; --violet:#a78bfa;
+  --mono:'Cascadia Code','JetBrains Mono',Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  overflow-x:hidden; line-height:1.6;
+}
+::-webkit-scrollbar{width:8px}
+::-webkit-scrollbar-thumb{background:#22355c;border-radius:4px}
+
+/* ---------- starfield: pure CSS, three parallax layers ---------- */
+.stars,.stars::before,.stars::after{
+  position:fixed;inset:-50%;content:'';pointer-events:none;z-index:0;
+  background-repeat:repeat;
+}
+.stars{
+  background-image:
+    radial-gradient(1.4px 1.4px at 20% 30%,#fff,transparent),
+    radial-gradient(1.2px 1.2px at 65% 12%,#cfe8ff,transparent),
+    radial-gradient(1.6px 1.6px at 82% 68%,#fff,transparent),
+    radial-gradient(1px 1px at 40% 85%,#9fd6ff,transparent);
+  background-size:340px 340px;
+  animation:drift 190s linear infinite;
+}
+.stars::before{
+  background-image:
+    radial-gradient(1px 1px at 12% 55%,#fff,transparent),
+    radial-gradient(1.3px 1.3px at 55% 40%,#bfe4ff,transparent),
+    radial-gradient(1px 1px at 90% 20%,#fff,transparent);
+  background-size:210px 210px;opacity:.55;
+  animation:drift 120s linear infinite reverse;
+}
+.stars::after{
+  background-image:radial-gradient(1.8px 1.8px at 30% 70%,rgba(255,255,255,.9),transparent);
+  background-size:520px 520px;opacity:.7;
+  animation:drift 260s linear infinite;
+}
+@keyframes drift{to{transform:translate3d(-340px,170px,0)}}
+
+/* ---------- nav ---------- */
+.nav{
+  position:fixed;top:0;left:0;right:0;z-index:60;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 40px;background:rgba(4,10,24,.72);
+  backdrop-filter:blur(10px);border-bottom:1px solid transparent;transition:.3s;
+}
+.nav.solid{border-bottom-color:var(--line);background:rgba(4,10,24,.94)}
+.logo{font-size:20px;font-weight:800;letter-spacing:.38em;margin-right:-.38em;
+  color:var(--accent);text-shadow:0 0 22px rgba(37,214,245,.55)}
+.nav-links{display:flex;gap:28px;align-items:center}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:13px;
+  font-weight:600;letter-spacing:.06em;transition:.2s}
+.nav-links a:hover{color:var(--accent)}
+.btn{
+  display:inline-block;padding:11px 24px;border-radius:9px;text-decoration:none;
+  font-size:13px;font-weight:700;letter-spacing:.08em;cursor:pointer;
+  border:1px solid var(--accent);color:var(--accent);
+  background:rgba(37,214,245,.07);transition:.25s;
+}
+.btn:hover{background:var(--accent);color:#03121c;box-shadow:0 0 30px rgba(37,214,245,.45)}
+.btn-lg{padding:15px 34px;font-size:14px}
+.btn-ghost{border-color:var(--line);color:var(--text);background:transparent}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);background:rgba(37,214,245,.07);box-shadow:none}
+
+/* ---------- hero ---------- */
+.hero{
+  position:relative;z-index:1;min-height:100vh;
+  display:grid;grid-template-columns:1fr 1fr;align-items:center;
+  gap:40px;padding:120px 60px 60px;max-width:1400px;margin:0 auto;
+}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:9px;padding:7px 15px;margin-bottom:24px;
+  border:1px solid var(--line);border-radius:100px;background:var(--panel);
+  font-size:11px;font-weight:700;letter-spacing:.18em;color:var(--accent);
+}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 10px var(--green);animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+h1{
+  font-size:clamp(38px,5vw,66px);line-height:1.06;font-weight:800;
+  letter-spacing:-.02em;margin-bottom:22px;
+}
+h1 .grad{
+  background:linear-gradient(120deg,var(--accent),var(--violet) 70%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.lede{font-size:17px;color:var(--muted);max-width:56ch;margin-bottom:34px}
+.hero-cta{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:38px}
+.hero-stats{display:flex;gap:34px;flex-wrap:wrap}
+.hs-val{font-size:26px;font-weight:800;color:var(--accent);font-family:var(--mono)}
+.hs-lab{font-size:10.5px;letter-spacing:.16em;color:var(--muted);font-weight:600}
+
+/* ---------- the globe: equirectangular NASA texture on a CSS sphere ---------- */
+.globe-wrap{position:relative;display:grid;place-items:center;min-height:520px}
+.globe{
+  position:relative;width:min(430px,80vw);aspect-ratio:1;border-radius:50%;
+  background-image:url('/static/assets/earth.jpg');
+  background-size:200% 100%;
+  animation:spin 48s linear infinite;
+  box-shadow:
+    inset -46px -18px 78px 8px rgba(0,0,0,.88),   /* terminator / night side */
+    inset 14px 10px 60px -12px rgba(120,190,255,.28),
+    0 0 70px rgba(37,214,245,.28),                 /* atmosphere bloom */
+    0 0 160px rgba(37,214,245,.12);
+}
+@keyframes spin{to{background-position:-200% 0}}
+/* limb darkening — makes it read as a sphere, not a flat disc */
+.globe::before{
+  content:'';position:absolute;inset:0;border-radius:50%;z-index:1;pointer-events:none;
+  background:radial-gradient(circle at 36% 30%,
+    transparent 6%, rgba(2,6,16,.10) 40%, rgba(2,6,16,.62) 74%,
+    rgba(2,6,16,.92) 92%, rgba(2,6,16,.99) 100%);
+}
+/* atmospheric rim */
+.globe::after{
+  content:'';position:absolute;inset:-11px;border-radius:50%;
+  background:radial-gradient(circle at 50% 50%,transparent 65%,rgba(37,214,245,.22) 82%,transparent 92%);
+  pointer-events:none;
+}
+/* orbit ring */
+.orbit{
+  position:absolute;width:min(620px,96vw);aspect-ratio:1;border-radius:50%;
+  border:1px solid rgba(37,214,245,.16);
+  transform:rotateX(74deg);animation:orbit 22s linear infinite;
+}
+.orbit::before{
+  content:'';position:absolute;top:-5px;left:50%;width:10px;height:10px;
+  border-radius:50%;background:var(--accent);box-shadow:0 0 18px 4px var(--accent);
+}
+@keyframes orbit{to{transform:rotateX(74deg) rotate(360deg)}}
+
+/* ---------- sections ---------- */
+section{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:100px 60px}
+.sec-head{text-align:center;margin-bottom:56px}
+.sec-tag{font-size:11px;letter-spacing:.2em;color:var(--accent);font-weight:700}
+.sec-head h2{font-size:clamp(28px,3.4vw,42px);font-weight:800;margin:12px 0 14px;letter-spacing:-.01em}
+.sec-head p{color:var(--muted);max-width:62ch;margin:0 auto}
+
+/* live telemetry strip */
+.live{
+  border-block:1px solid var(--line);background:linear-gradient(180deg,#060f22,#040a18);
+  padding:26px 60px;position:relative;z-index:1;
+}
+.live-inner{max-width:1240px;margin:0 auto;display:flex;align-items:center;
+  justify-content:space-between;gap:24px;flex-wrap:wrap}
+.live-tag{display:flex;align-items:center;gap:10px;font-size:11px;
+  letter-spacing:.18em;font-weight:700;color:var(--muted)}
+.tel-grid{display:flex;gap:30px;flex-wrap:wrap}
+.tel{min-width:96px}
+.tel-v{font-family:var(--mono);font-size:19px;font-weight:700;color:var(--text)}
+.tel-l{font-size:10px;letter-spacing:.12em;color:var(--muted);font-weight:600}
+.tel.warn .tel-v{color:var(--amber)} .tel.bad .tel-v{color:var(--red)}
+
+/* agent pipeline */
+/* 6 stages / 6 cards → deterministic 3x2, no orphan row */
+.pipe,.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.stage{
+  position:relative;padding:24px 20px;border:1px solid var(--line);border-radius:14px;
+  background:linear-gradient(160deg,var(--panel),#071122);transition:.3s;
+}
+.stage:hover{border-color:var(--accent);transform:translateY(-6px);
+  box-shadow:0 16px 44px -14px rgba(37,214,245,.4)}
+.stage-n{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700}
+.stage h3{font-size:14.5px;margin:9px 0 8px;letter-spacing:.02em}
+.stage p{font-size:12.8px;color:var(--muted);line-height:1.55}
+.stage-ico{font-size:22px;margin-bottom:6px;display:block}
+
+/* feature cards */
+.card{
+  padding:30px 26px;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(160deg,var(--panel),#060e1e);transition:.3s;
+}
+.card:hover{border-color:rgba(37,214,245,.45);transform:translateY(-5px)}
+.card .ico{font-size:26px}
+.card h3{font-size:17px;margin:14px 0 10px}
+.card p{font-size:13.6px;color:var(--muted)}
+
+/* subsystem chips */
+.chips{display:flex;gap:11px;flex-wrap:wrap;justify-content:center}
+.chip{padding:9px 17px;border:1px solid var(--line);border-radius:100px;
+  background:var(--panel);font-size:12px;font-weight:600;font-family:var(--mono);
+  color:var(--muted);transition:.25s}
+.chip:hover{color:var(--accent);border-color:var(--accent)}
+
+/* cta */
+.cta{text-align:center;padding:110px 60px}
+.cta h2{font-size:clamp(30px,4vw,50px);font-weight:800;margin-bottom:18px}
+.cta p{color:var(--muted);max-width:56ch;margin:0 auto 34px}
+
+footer{
+  border-top:1px solid var(--line);padding:34px 60px;text-align:center;
+  color:var(--muted);font-size:12.5px;position:relative;z-index:1;
+}
+footer a{color:var(--muted)}
+
+/* scroll reveal */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .8s ease,transform .8s ease}
+.reveal.in{opacity:1;transform:none}
+
+@media(max-width:1000px){.pipe,.cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.pipe,.cards{grid-template-columns:1fr}}
+@media(max-width:900px){
+  .hero{grid-template-columns:1fr;padding:110px 26px 50px;text-align:center}
+  .hero-cta,.hero-stats{justify-content:center}
+  .globe-wrap{min-height:400px;order:-1}
+  section,.live,.cta,footer{padding-inline:26px}
+  .nav{padding:14px 22px} .nav-links a:not(.btn){display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<div class="stars"></div>
+
+<nav class="nav" id="nav">
+  <div class="logo">VORTEX</div>
+  <div class="nav-links">
+    <a href="#pipeline">Pipeline</a>
+    <a href="#capabilities">Capabilities</a>
+    <a href="#coverage">Coverage</a>
+    <a href="/dashboard" class="btn">LAUNCH CONSOLE</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div>
+    <div class="eyebrow"><span class="dot"></span><span id="heroStatus">MISSION OPS · AGENTIC LAYER</span></div>
+    <h1>Autonomous <span class="grad">mission ops</span> for satellite constellations.</h1>
+    <p class="lede">
+      Six specialised agents watch telemetry continuously, diagnose cross-subsystem
+      faults, simulate recovery against a digital twin, route approvals by severity,
+      and hand operators an auditable runbook — before the next ground pass.
+    </p>
+    <div class="hero-cta">
+      <a href="/dashboard" class="btn btn-lg">LAUNCH CONSOLE</a>
+      <a href="#pipeline" class="btn btn-lg btn-ghost">SEE THE PIPELINE</a>
+    </div>
+    <div class="hero-stats">
+      <div><div class="hs-val">6</div><div class="hs-lab">AGENTS</div></div>
+      <div><div class="hs-val">12</div><div class="hs-lab">TELEMETRY CHANNELS</div></div>
+      <div><div class="hs-val">7</div><div class="hs-lab">SUBSYSTEMS</div></div>
+      <div><div class="hs-val" id="hsRunbooks">—</div><div class="hs-lab">RUNBOOKS WRITTEN</div></div>
+    </div>
+  </div>
+  <div class="globe-wrap">
+    <div class="orbit"></div>
+    <div class="globe"></div>
+  </div>
+</header>
+
+<!-- live strip: real values from the running backend -->
+<div class="live">
+  <div class="live-inner">
+    <div class="live-tag"><span class="dot" id="liveDot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block"></span><span id="liveLabel">CONNECTING TO BUS…</span></div>
+    <div class="tel-grid" id="telGrid">
+      <div class="tel"><div class="tel-v" data-p="battery_voltage_v">—</div><div class="tel-l">BUS VOLTAGE</div></div>
+      <div class="tel"><div class="tel-v" data-p="battery_soc_pct">—</div><div class="tel-l">BATTERY SOC</div></div>
+      <div class="tel"><div class="tel-v" data-p="temp_battery_c">—</div><div class="tel-l">BATT TEMP</div></div>
+      <div class="tel"><div class="tel-v" data-p="attitude_error_deg">—</div><div class="tel-l">ATT ERROR</div></div>
+      <div class="tel"><div class="tel-v" data-p="downlink_snr_db">—</div><div class="tel-l">DOWNLINK SNR</div></div>
+      <div class="tel"><div class="tel-v" data-p="cpu_usage_pct">—</div><div class="tel-l">OBC CPU</div></div>
+    </div>
+  </div>
+</div>
+
+<section id="pipeline">
+  <div class="sec-head reveal">
+    <div class="sec-tag">AGENT PIPELINE</div>
+    <h2>Detection to runbook, without a human in the loop until it matters.</h2>
+    <p>Every stage writes its rationale to the activity log, so the chain that produced a
+       procedure is reconstructable after the fact.</p>
+  </div>
+  <div class="pipe reveal">
+    <div class="stage"><span class="stage-ico">📡</span><div class="stage-n">01 · MONITOR</div>
+      <h3>Trend Detection</h3><p>Scans 12 telemetry channels against nominal envelopes and rate-of-change history to catch drift before threshold breach.</p></div>
+    <div class="stage"><span class="stage-ico">🔬</span><div class="stage-n">02 · DIAGNOSTICS</div>
+      <h3>Root Cause</h3><p>Correlates the anomaly across subsystems and orbital context — eclipse, phase, thermal load — to separate cause from symptom.</p></div>
+    <div class="stage"><span class="stage-ico">🧭</span><div class="stage-n">03 · RECOVERY PLANNER</div>
+      <h3>Ranked Options</h3><p>Generates candidate procedures ranked by risk, recovery time, and consumable cost rather than a single fixed response.</p></div>
+    <div class="stage"><span class="stage-ico">🛰️</span><div class="stage-n">04 · DIGITAL TWIN</div>
+      <h3>Simulate &amp; Validate</h3><p>Runs each option against mission constraints. Rejected procedures trigger a constrained fallback and revalidation.</p></div>
+    <div class="stage"><span class="stage-ico">🔐</span><div class="stage-n">05 · APPROVAL ROUTER</div>
+      <h3>Severity Gating</h3><p>LOW and MEDIUM execute autonomously. HIGH and CRITICAL hold for operator authorisation — the safety envelope is never self-widened.</p></div>
+    <div class="stage"><span class="stage-ico">📄</span><div class="stage-n">06 · RUNBOOK GENERATOR</div>
+      <h3>Auditable Output</h3><p>Emits a timestamped operator runbook: commands, expected telemetry response, abort criteria, and the reasoning behind the choice.</p></div>
+  </div>
+</section>
+
+<section id="capabilities">
+  <div class="sec-head reveal">
+    <div class="sec-tag">WHY IT SCALES</div>
+    <h2>Rule-based automation breaks on novel faults.</h2>
+    <p>Thresholds catch what someone already anticipated. Cross-subsystem interactions
+       during an on-orbit event are exactly the cases nobody wrote a rule for.</p>
+  </div>
+  <div class="cards reveal">
+    <div class="card"><div class="ico">⚡</div><h3>Cross-subsystem reasoning</h3>
+      <p>A thermal excursion that starts as a heater fault and ends as a battery derate is one event, not three alarms. Diagnostics traces the dependency instead of firing on each channel.</p></div>
+    <div class="card"><div class="ico">🧪</div><h3>Validated before executed</h3>
+      <p>No procedure reaches an operator without a digital-twin pass. Constraint violations force revision, not a warning label.</p></div>
+    <div class="card"><div class="ico">📋</div><h3>Auditable by construction</h3>
+      <p>Each agent logs its input, rationale, and output. The runbook cites the diagnosis it came from — reviewable long after the pass ends.</p></div>
+    <div class="card"><div class="ico">🔌</div><h3>Runs fully offline</h3>
+      <p>A scenario-aware mock reasoning layer keeps the whole pipeline demonstrable with no API key and no network — useful for air-gapped ground segments.</p></div>
+    <div class="card"><div class="ico">⏱️</div><h3>Built for constellations</h3>
+      <p>Cost per satellite is dominated by operator attention. Autonomous handling of routine severity bands is what makes fleet growth affordable.</p></div>
+    <div class="card"><div class="ico">🎛️</div><h3>Injectable scenarios</h3>
+      <p>Five failure modes — undervoltage, thermal runaway, attitude drift, memory exhaustion, link loss — injectable on demand to rehearse response.</p></div>
+  </div>
+</section>
+
+<section id="coverage">
+  <div class="sec-head reveal">
+    <div class="sec-tag">COVERAGE</div>
+    <h2>Seven subsystems, twelve channels, one operator view.</h2>
+  </div>
+  <div class="chips reveal">
+    <span class="chip">EPS · Electrical Power</span>
+    <span class="chip">ADCS · Attitude Control</span>
+    <span class="chip">COMMS · Communications</span>
+    <span class="chip">THERMAL · Thermal Control</span>
+    <span class="chip">OBC · On-Board Computer</span>
+    <span class="chip">PROPULSION</span>
+    <span class="chip">PAYLOAD</span>
+  </div>
+</section>
+
+<section class="cta reveal">
+  <h2>Open the console.</h2>
+  <p>Live telemetry, agent activity stream, anomaly injection, and every runbook the
+     system has written — in one operator surface.</p>
+  <a href="/dashboard" class="btn btn-lg">LAUNCH CONSOLE →</a>
+</section>
+
+<footer>
+  VORTEX · Autonomous Satellite Mission Ops &amp; Anomaly Response ·
+  Earth imagery: <a href="https://visibleearth.nasa.gov/images/73909/december-blue-marble-next-generation-w-topography-and-bathymetry">NASA Visible Earth — Blue Marble Next Generation</a> (public domain)
+</footer>
+
+<script>
+// nav shadow on scroll
+addEventListener('scroll', () => nav.classList.toggle('solid', scrollY > 40));
+
+// scroll reveal
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+}), {threshold:.12});
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+// live telemetry off the running backend; degrades to "OFFLINE" if it isn't up
+const UNITS = {battery_voltage_v:'V', battery_soc_pct:'%', temp_battery_c:'°C',
+               attitude_error_deg:'°', downlink_snr_db:'dB', cpu_usage_pct:'%'};
+const cells = [...document.querySelectorAll('.tel-v[data-p]')];
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    const t = s.telemetry || {}, viol = new Set();
+    for (const c of cells) {
+      const v = t[c.dataset.p];
+      c.textContent = v == null ? '—' : v.toFixed(1) + (UNITS[c.dataset.p] || '');
+    }
+    const n = (s.active_anomalies || []).length;
+    liveDot.style.background = n ? 'var(--amber)' : 'var(--green)';
+    liveDot.style.boxShadow = '0 0 10px currentColor';
+    liveLabel.textContent = n ? `LIVE BUS · ${n} ACTIVE ANOMAL${n>1?'IES':'Y'}` : 'LIVE BUS · NOMINAL';
+    hsRunbooks.textContent = (s.runbooks || []).length;
+    heroStatus.textContent = s.offline_mode ? 'MISSION OPS · OFFLINE DEMO' : 'MISSION OPS · AGENTIC LAYER';
+  } catch {
+    liveDot.style.background = 'var(--muted)';
+    liveLabel.textContent = 'BUS OFFLINE · START THE BACKEND';
+    hsRunbooks.textContent = '—';
+  }
+}
+poll(); setInterval(poll, 2000);
+</script>
+</body>
+</html>
