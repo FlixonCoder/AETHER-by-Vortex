@@ -4,9 +4,9 @@ FastAPI Server Endpoints
 import asyncio
 import json
 from pathlib import Path
-from typing import Set
+from typing import Optional, Set
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -66,7 +66,55 @@ def create_app(orchestrator: MissionOrchestrator) -> FastAPI:
     async def get_status(): return orchestrator.get_status()
 
     @app.get("/api/history/{param}")
-    async def get_history(param: str, n: int = 20): return {"param": param, "history": orchestrator.simulator.get_history(param, n)}
+    async def get_history(param: str, n: int = 20, sat_id: Optional[str] = None):
+        return {"param": param, "sat_id": sat_id,
+                "history": orchestrator.get_simulator(sat_id).get_history(param, n)}
+
+    @app.get("/api/fleet")
+    async def get_fleet(): return orchestrator.fleet_status()
+
+    @app.get("/api/clusters")
+    async def get_clusters():
+        """Current formations, their hosts, and each host's failover state."""
+        return orchestrator.clusters.status()
+
+    @app.get("/api/stages")
+    async def get_stages():
+        """Counters for the three processing tiers and the triage queue."""
+        return {**orchestrator._stage_counts,
+                "queue_depth": orchestrator._triage.qsize()}
+
+    @app.post("/api/fleet/adopt")
+    async def adopt_satellite(payload: dict = Body(...)):
+        """Bring a satellite picked on the orbit map under mission control."""
+        sat_id = str(payload.get("sat_id") or "").strip()
+        name = str(payload.get("name") or sat_id).strip()
+        if not sat_id:
+            raise HTTPException(status_code=400, detail="sat_id is required.")
+
+        def _num(key):
+            v = payload.get(key)
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        identity = orchestrator.adopt_satellite(
+            sat_id=sat_id, name=name, norad_id=payload.get("norad_id"),
+            altitude_km=_num("altitude_km"), inclination_deg=_num("inclination_deg"),
+            period_min=_num("period_min"),
+            mission=str(payload.get("mission") or "imaging"),
+            raan_deg=_num("raan_deg"),
+        )
+        if payload.get("activate", True):
+            orchestrator.set_active(sat_id)
+        return {"adopted": identity, "fleet": orchestrator.fleet_status()}
+
+    @app.post("/api/fleet/active/{sat_id}")
+    async def set_active(sat_id: str):
+        if not orchestrator.set_active(sat_id):
+            raise HTTPException(status_code=404, detail="Satellite not under mission control.")
+        return orchestrator.fleet_status()
 
     @app.get("/api/runbooks")
     async def list_runbooks(): return {"runbooks": orchestrator.self_runbooks}
@@ -78,9 +126,10 @@ def create_app(orchestrator: MissionOrchestrator) -> FastAPI:
         return {"content": path.read_text(encoding="utf-8")}
 
     @app.post("/api/inject/{scenario}")
-    async def inject_anomaly(scenario: str):
+    async def inject_anomaly(scenario: str, sat_id: Optional[str] = None):
+        """Inject a fault. Defaults to whichever satellite is currently selected."""
         if scenario not in ANOMALY_SCENARIOS: raise HTTPException(status_code=400, detail="Unknown scenario.")
-        return {"injected": scenario, "info": await orchestrator.inject_anomaly(scenario)}
+        return {"injected": scenario, "info": await orchestrator.inject_anomaly(scenario, sat_id)}
 
     @app.post("/api/approve/{anomaly_id}")
     async def approve(anomaly_id: str, rank: int = 1):

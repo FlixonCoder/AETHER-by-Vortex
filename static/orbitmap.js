@@ -19,6 +19,12 @@
     weather:  { label: 'Weather',     color: '#c084fc', group: 'weather' },
   };
 
+  // Constellation group -> the mission the fleet clusters on.
+  const MISSION_OF = {
+    starlink: 'comms', gps: 'navigation', weather: 'weather',
+    stations: 'station', mission: 'imaging',
+  };
+
   const LYRA_COLOR = { NOMINAL: '#22d3ee', LOW: '#84cc16', MEDIUM: '#facc15', HIGH: '#fb923c', CRITICAL: '#ef4444' };
 
   let globe = null;
@@ -216,6 +222,43 @@
     else { tag2.style.display = 'none'; }
   }
 
+  /* Hand the picked object to mission control. Real satellites have an orbit
+     but nothing we can downlink, so the server starts a simulator seeded with
+     the geometry SGP4 just gave us — the telemetry is synthetic, the orbit is
+     the one it is really flying. */
+  function handOverToMissionControl(pt) {
+    if (!window.setActiveSatellite) return;
+
+    // Take inclination and period straight off the TLE that SGP4 parsed —
+    // satrec.inclo is radians and satrec.no is mean motion in rad/min. A single
+    // position fix cannot give either, and a circular approximation of the
+    // period is wrong for anything eccentric.
+    // RAAN comes off the TLE too (satrec.nodeo, radians). Inclination alone
+    // does not define a plane: two satellites can share one and still fly
+    // planes 180 degrees apart, which would wrongly cluster them together.
+    let inclination = null, periodMin = null, raan = null;
+    if (pt.satrec) {
+      if (isFinite(pt.satrec.inclo)) inclination = pt.satrec.inclo * 180 / Math.PI;
+      if (isFinite(pt.satrec.nodeo)) raan = ((pt.satrec.nodeo * 180 / Math.PI) % 360 + 360) % 360;
+      if (pt.satrec.no > 0) periodMin = (2 * Math.PI) / pt.satrec.no;
+    }
+    if (periodMin === null) {
+      const r = EARTH_R + pt.altKm;
+      periodMin = (2 * Math.PI * Math.sqrt(Math.pow(r, 3) / 398600.4418)) / 60;
+    }
+
+    window.setActiveSatellite({
+      sat_id: pt.isLyra ? 'LYRA-1' : String(pt.noradId || pt.name),
+      name: pt.name,
+      norad_id: pt.isLyra ? null : String(pt.noradId || ''),
+      altitude_km: pt.altKm,
+      inclination_deg: inclination,
+      raan_deg: raan,
+      period_min: periodMin,
+      mission: MISSION_OF[pt.kind] || 'imaging',
+    });
+  }
+
   function selectPoint(pt) {
     selected = pt;
     updateInfoPanel(pt);
@@ -225,6 +268,7 @@
         watchlist.unshift({ name: pt.name, noradId: pt.noradId, isLyra: pt.isLyra });
         watchlist = watchlist.slice(0, 6);
       }
+      handOverToMissionControl(pt);
     }
     refresh();
   }

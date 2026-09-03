@@ -60,6 +60,79 @@ let notifications = [];
 let unread = 0;
 let pktSeq = 1000;
 
+/* ---------------- Active satellite ----------------
+   The orbit map can hand mission control any object it is tracking. Every
+   panel reads the active spacecraft, so telemetry from the rest of the fleet
+   is stashed rather than mixed into the charts: two satellites sharing one
+   history array would draw a single meaningless trace. */
+let activeSat = 'LYRA-1';
+let activeSatName = 'LYRA-1';
+const fleetLatest = new Map();   // satId -> last telemetry frame, whole fleet
+let clusterState = { count: 0, clusters: [] };
+let stageState = { stage1: 0, stage2: 0, stage3: 0, spikes_rejected: 0, failsafe: 0, queue_depth: 0 };
+const satArchive = new Map();    // satId -> {history, packets, pktSeq}
+
+function switchSatellite(satId, name) {
+  if (!satId || satId === activeSat) return;
+
+  satArchive.set(activeSat, { history: { ...history }, packets: packets.slice(), pktSeq });
+
+  activeSat = satId;
+  activeSatName = name || satId;
+
+  // Swap the chart buffers over to the incoming spacecraft. Shallow-copying
+  // above is safe because these keys are replaced with fresh arrays, never
+  // mutated in place.
+  Object.keys(history).forEach(k => delete history[k]);
+  Object.keys(PARAMS).forEach(k => history[k] = []);
+  packets.length = 0;
+  pktSeq = 1000;
+
+  const kept = satArchive.get(satId);
+  if (kept) {
+    Object.assign(history, kept.history);
+    packets.push(...kept.packets);
+    pktSeq = kept.pktSeq;
+  }
+
+  const frame = fleetLatest.get(satId);
+  latestTelemetry = frame ? frame.values : {};
+  latestOrbital = frame ? frame.orbital : {};
+  latestViolations = frame ? frame.violations : [];
+
+  renderActiveSatLabel();
+  renderOverviewCluster();
+  renderOverview();
+  renderHealth();
+  renderAnomalies();
+  drawAllCharts();
+  renderPackets();
+  addLog('INFO', `Mission control switched to ${activeSatName}`);
+}
+
+function renderActiveSatLabel() {
+  const el = $('activeSatName');
+  if (el) el.textContent = activeSatName;
+  const prompt = document.querySelector('.term-row .prompt');
+  if (prompt) prompt.textContent = activeSatName + '>';
+}
+
+/* Called by the orbit map when the operator picks a satellite. */
+window.setActiveSatellite = async (sat) => {
+  if (!sat || !sat.sat_id) return;
+  try {
+    await fetch('/api/fleet/adopt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sat),
+    });
+  } catch (e) {
+    toast('Could not reach mission server to adopt ' + (sat.name || sat.sat_id), 'error');
+    return;
+  }
+  switchSatellite(sat.sat_id, sat.name);
+};
+
 /* ---------------- Utils ---------------- */
 const pad = n => String(n).padStart(2, '0');
 function fmtTime(d) { d = d ? new Date(d) : new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
@@ -207,14 +280,16 @@ function handleMessage(msg) {
     case 'connected': onConnected(d); break;
     case 'telemetry_update':
       onTelemetry(d, msg.timestamp);
-      if (window.orbitMapTelemetry) window.orbitMapTelemetry(d);
-      if (window.heroTelemetry) window.heroTelemetry(d);
+      if ((d.sat_id || 'LYRA-1') === 'LYRA-1' && window.orbitMapTelemetry) window.orbitMapTelemetry(d);
+      if ((d.sat_id || 'LYRA-1') === activeSat && window.heroTelemetry) window.heroTelemetry(d);
       break;
     case 'anomaly_detected':
       onAnomaly(d, msg.timestamp);
-      if (window.orbitMapSeverity) window.orbitMapSeverity(d.severity);
-      if (window.heroSeverity) window.heroSeverity(d.severity);
+      if ((d.sat_id || 'LYRA-1') === 'LYRA-1' && window.orbitMapSeverity) window.orbitMapSeverity(d.severity);
+      if ((d.sat_id || 'LYRA-1') === activeSat && window.heroSeverity) window.heroSeverity(d.severity);
       break;
+    case 'cluster_update': onClusters(d); break;
+    case 'host_change': onHostChange(d, msg.timestamp); break;
     case 'agent_activity': onAgentActivity(d, msg.timestamp); break;
     case 'diagnosis_complete': onDiagnosis(d, msg.timestamp); break;
     case 'validation_failed':
@@ -229,6 +304,102 @@ function handleMessage(msg) {
   }
 }
 
+async function onClusters(d) {
+  clusterState = d || { count: 0, clusters: [] };
+  try { stageState = await (await fetch('/api/stages')).json(); } catch (e) { /* keep last */ }
+  renderClusters();
+  renderOverviewCluster();
+}
+
+function onHostChange(c, ts) {
+  const host = (c.members.find(m => m.sat_id === c.host_id) || {}).name || c.host_id;
+  if (c.host_is_temporary) {
+    addLog('WARN', `${c.cluster_id}: host failed over to ${host} — ${c.host_reason}`, ts);
+    notify(`${c.cluster_id} host failover → ${host}`, 'warn');
+  } else {
+    addLog('OK', `${c.cluster_id}: host handed back to ${host}`, ts);
+  }
+  renderClusters();
+  renderOverviewCluster();
+}
+
+/* The cluster the selected satellite belongs to, surfaced on the Overview so
+   the operator can see its formation and who is hosting it. */
+function renderOverviewCluster() {
+  const el = $('ovCluster');
+  if (!el) return;
+  const c = clusterState.clusters.find(x => x.members.some(m => m.sat_id === activeSat));
+  if (!c) { el.textContent = '—'; el.className = 's-val'; return; }
+  const host = (c.members.find(m => m.sat_id === c.host_id) || {}).name || c.host_id;
+  const isHost = c.host_id === activeSat;
+  el.textContent = `${c.cluster_id} · ${c.size} sats · ${isHost ? 'HOST' : 'host ' + host}`;
+  el.className = 's-val' + (c.host_is_temporary ? ' warn-val' : '');
+  el.title = c.host_is_temporary ? `Temporary host — ${c.host_reason}` : c.host_reason;
+}
+
+function healthTag(state) {
+  return state === 'NORMAL' ? 'tag-green' : state === 'DEGRADED' ? 'tag-amber' : 'tag-red';
+}
+
+function renderClusters() {
+  const grid = $('clusterGrid');
+  if (!grid) return;
+
+  $('clCount').textContent = clusterState.count;
+  $('stStage1').textContent = stageState.stage1;
+  $('stStage2').textContent = stageState.stage2;
+  $('stStage3').textContent = stageState.stage3;
+  $('stSpikes').textContent = stageState.spikes_rejected;
+  $('stFailsafe').textContent = stageState.failsafe;
+  $('clEmpty').classList.toggle('show', clusterState.clusters.length === 0);
+
+  grid.innerHTML = clusterState.clusters.map(c => {
+    const host = (c.members.find(m => m.sat_id === c.host_id) || {}).name || c.host_id;
+    const nominal = (c.members.find(m => m.sat_id === c.nominal_host_id) || {}).name || c.nominal_host_id;
+    const sit = c.situation || {};
+    const rows = c.members.map(m => `
+      <tr>
+        <td>${m.is_host ? '<span class="tag tag-green">HOST</span>' : ''}</td>
+        <td>${esc(m.name)}</td>
+        <td>${m.anomaly
+          ? '<span class="tag tag-amber">FAULTED</span>'
+          : `<span class="tag ${healthTag(m.health)}">${esc(m.health)}</span>`}</td>
+        <td>${m.health_score}</td>
+        <td>${m.in_eclipse ? 'ECLIPSE' : 'SUNLIT'}</td>
+        <td>${m.stations.length ? esc(m.stations.join(', ')) : '—'}</td>
+        <td>${m.anomaly ? `<span class="tag tag-red">${esc(m.anomaly)}</span>` : '—'}</td>
+        <td>${m.phase_pct}%</td>
+      </tr>`).join('');
+
+    return `<div class="card">
+      <div class="card-head">
+        <h3>${esc(c.cluster_id)} &middot; ${esc(c.mission.toUpperCase())} &middot; ${c.size} SATS</h3>
+        <span class="tag ${healthTag(c.health)}">${esc(c.health)}</span>
+      </div>
+      <ul class="stat-list">
+        <li><span class="s-lab">Host</span><span class="s-val">${esc(host)}${
+          c.host_is_temporary
+            ? ` <span class="tag tag-amber">TEMPORARY</span> <span style="color:var(--muted);font-weight:400">(nominal ${esc(nominal)} — ${esc(c.host_reason)})</span>`
+            : ''}</span></li>
+        <li><span class="s-lab">Orbit</span><span class="s-val">${c.orbit.altitude_km} km &middot; ${c.orbit.inclination_deg}° inc &middot; RAAN ${c.orbit.raan_deg}°</span></li>
+        <li><span class="s-lab">Environment</span><span class="s-val">${esc(sit.environment || '—')}${
+          sit.members_in_eclipse ? ` (${sit.members_in_eclipse}/${c.size} eclipsed)` : ''}</span></li>
+        <li><span class="s-lab">Common ground contact</span><span class="s-val">${
+          (sit.common_stations && sit.common_stations.length) ? esc(sit.common_stations.join(', ')) : 'none'}</span></li>
+        <li><span class="s-lab">Shared anomaly</span><span class="s-val">${
+          sit.shared_anomaly ? `<span class="tag tag-red">${esc(sit.shared_anomaly)}</span>` : '—'}</span></li>
+        <li><span class="s-lab">Mean health</span><span class="s-val">${c.mean_health_score}</span></li>
+      </ul>
+      <div class="tbl-wrap" style="margin-top:12px">
+        <table class="tbl"><thead><tr>
+          <th></th><th>Satellite</th><th>State</th><th title="Health scored on the one-minute mean, so it lags a fresh fault">Score (1 min)</th>
+          <th>Lighting</th><th>Stations</th><th>Anomaly</th><th>Phase</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function onConnected(status) {
   if (status.offline_mode) $('demoChip').style.display = 'inline-flex';
   $('setBackendInfo').textContent = `SatOps AI mission server · ${status.offline_mode ? 'offline mock-LLM demo mode' : 'live Claude agent mode'}`;
@@ -237,12 +408,30 @@ function onConnected(status) {
   (status.active_anomalies || []).forEach(a => { anomalies.set(a.id, { ...a, status: 'DETECTED' }); });
   runbooks = status.runbooks || [];
   runbooksIssued = runbooks.length;
+  if (status.clusters) clusterState = status.clusters;
+  if (status.stages) stageState = status.stages;
+  renderClusters();
+
+  // The server holds the selection, so a page reload comes back pointed at the
+  // same spacecraft instead of silently reverting to LYRA-1.
+  const fleet = status.fleet;
+  if (fleet && fleet.active_id) {
+    const cur = (fleet.satellites || []).find(x => x.sat_id === fleet.active_id);
+    if (fleet.active_id !== activeSat) switchSatellite(fleet.active_id, cur ? cur.name : fleet.active_id);
+    else { activeSatName = cur ? cur.name : activeSat; renderActiveSatLabel(); }
+  }
+
   renderAnomalies(); renderRunbookList();
   loadScenarios();
 }
 
 /* ---------------- Telemetry handling ---------------- */
 function onTelemetry(d, ts) {
+  // The server streams a frame per spacecraft; keep them all, render one.
+  const satId = d.sat_id || 'LYRA-1';
+  fleetLatest.set(satId, { values: d.values || {}, orbital: d.orbital || {}, violations: d.violations || [] });
+  if (satId !== activeSat) return;
+
   latestTelemetry = d.values || {};
   latestOrbital = d.orbital || {};
   latestViolations = d.violations || [];
@@ -287,9 +476,15 @@ function renderOverview() {
   const tv = latestTelemetry;
   if (tv.battery_soc_pct == null) return;
 
+  // Altitude comes from the spacecraft's own orbit, not a constant: the card
+  // now follows whichever satellite is selected, and an adopted object flies a
+  // completely different orbit from LYRA-1. Velocity follows from it by
+  // v = sqrt(GM / r), so the two can never disagree.
   const phase = (latestOrbital.orbital_phase_pct || 0) / 100 * 2 * Math.PI;
-  const alt = 512.6 + 2.2 * Math.sin(phase);
-  const vel = 7.56 + 0.008 * Math.cos(phase);
+  const alt = latestOrbital.altitude_km != null
+    ? latestOrbital.altitude_km
+    : 512.6 + 2.2 * Math.sin(phase);
+  const vel = Math.sqrt(398600.4418 / (6371 + alt));
   $('ovAlt').textContent = alt.toFixed(1) + ' km';
   $('ovVel').textContent = vel.toFixed(2) + ' km/s';
 
@@ -510,8 +705,9 @@ setInterval(() => {
 /* ---------------- Pipeline events ---------------- */
 function onAnomaly(a, ts) {
   anomalies.set(a.id, { ...a, status: 'DETECTED' });
-  addLog('ERROR', `ANOMALY ${a.id} — ${a.summary || a.anomaly_type} [${a.severity}]`, ts);
-  notify(`Anomaly detected: ${a.anomaly_type || 'threshold violation'} (${a.severity})`, 'error');
+  const who = a.sat_name || a.sat_id || 'LYRA-1';
+  addLog('ERROR', `ANOMALY ${a.id} on ${who} — ${a.summary || a.anomaly_type} [${a.severity}]`, ts);
+  notify(`${who}: ${a.anomaly_type || 'threshold violation'} (${a.severity})`, 'error');
   wfSet(1, 'done', null, ts);
   wfSet(2, 'active', 'Analyzing subsystem telemetry and isolating root cause…');
   renderAnomalies();
@@ -588,6 +784,7 @@ function renderAnomalies() {
   $('anoBody').innerHTML = shown.map(a => `
     <tr><td>${fmtTime(a.detected_at)}</td><td style="font-family:var(--mono);font-size:11px">${esc(a.id)}</td>
     <td><span class="sev ${esc(a.severity)}">${esc(a.severity)}</span></td>
+    <td>${esc(a.sat_name || a.sat_id || 'LYRA-1')}</td>
     <td>${esc(a.primary_subsystem || '—')}</td>
     <td style="white-space:normal;max-width:380px">${esc(a.summary || a.anomaly_type || '—')}</td>
     <td><span class="tag ${a.status === 'RESOLVED' ? 'tag-green' : a.status === 'AWAITING APPROVAL' ? 'tag-amber' : ''}">${esc(a.status)}</span></td></tr>`).join('');
@@ -645,9 +842,9 @@ window.runSim = async (key) => {
   if (simRunning) return;
   simRunning = key;
   renderSimGrid();
-  addLog('WARN', `Injecting fault scenario: ${key}`);
-  notify(`Simulation started: ${scenarioTitle(key)}`, 'warn');
-  try { await fetch(`/api/inject/${key}`, { method: 'POST' }); }
+  addLog('WARN', `Injecting fault scenario on ${activeSatName}: ${key}`);
+  notify(`${activeSatName}: ${scenarioTitle(key)} started`, 'warn');
+  try { await fetch(`/api/inject/${key}?sat_id=${encodeURIComponent(activeSat)}`, { method: 'POST' }); }
   catch (e) { addLog('ERROR', 'Injection failed: ' + e.message); simRunning = null; renderSimGrid(); return; }
   // watchdog: clear the "running" lock if pipeline never completes
   setTimeout(() => { if (simRunning === key) { simRunning = null; renderSimGrid(); } }, 120000);
@@ -760,8 +957,8 @@ async function execTerm(raw) {
         break;
       case 'inject': {
         if (!args[0] || !scenarios[args[0]]) { termPrint('Unknown scenario. Try: ' + Object.keys(scenarios).join(', '), 'err'); break; }
-        await fetch(`/api/inject/${args[0]}`, { method: 'POST' });
-        termPrint(`Fault "${args[0]}" injected — watch the Workflow page.`, 'ok'); break;
+        await fetch(`/api/inject/${args[0]}?sat_id=${encodeURIComponent(activeSat)}`, { method: 'POST' });
+        termPrint(`Fault "${args[0]}" injected on ${activeSatName} — watch the Workflow page.`, 'ok'); break;
       }
       case 'approve': {
         if (args.length < 2) { termPrint('Usage: approve <anomaly_id> <rank>', 'err'); break; }
