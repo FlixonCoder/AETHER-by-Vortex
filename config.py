@@ -75,6 +75,21 @@ AUTO_APPROVE_MAX_SEVERITY = "MEDIUM"  # HIGH and CRITICAL require human approval
 TELEMETRY_INTERVAL_S = 2
 ANOMALY_CHECK_EVERY_N_TICKS = 4
 
+# Rate-of-change limits, units/second. Only parameters where a fast ramp is
+# itself a fault get one; the rest rely on the persistence path. Values are set
+# well above the orbital thermal cycle (a ~10 C swing over a 90 min orbit is
+# ~0.004 C/s) so normal operations never trip the rate detector.
+RATE_LIMITS = {
+    "temp_battery_c": 0.20,
+    "temp_payload_c": 0.30,
+    "temp_obc_c": 0.20,
+    "attitude_error_deg": 0.10,
+}
+# battery_voltage_v deliberately has no rate limit. Entering eclipse is a real
+# ~3.8 V step every orbit, and it reads as 0.18 V/s even across a 30 s window,
+# so any rate limit tight enough to catch a fault also fires once per orbit on
+# normal operations. Voltage faults are covered by the limit + persistence path.
+
 ANOMALY_SCENARIOS = {
     "battery_undervoltage": {
         "subsystem": "EPS",
