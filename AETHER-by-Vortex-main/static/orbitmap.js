@@ -200,6 +200,8 @@
 
     const tag = $('omInfoTag');
     tag.textContent = pt.altKm < 2000 ? 'LEO' : pt.altKm < 35000 ? 'MEO' : 'GEO';
+    const minTag = $('omInfoMinTag');
+    if (minTag) minTag.textContent = tag.textContent;
     const tag2 = $('omInfoTag2');
     if (pt.isLyra) { tag2.style.display = ''; tag2.textContent = lyraState.severity; tag2.style.color = pt.color; }
     else { tag2.style.display = 'none'; }
@@ -247,6 +249,37 @@
 
     $('omClearSel')?.addEventListener('click', () => {
       watchlist = []; selected = null; updateInfoPanel(null); renderWatchlist(); refresh();
+    });
+
+    $('omInfoMin')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const box = $('omInfo');
+      if (!box) return;
+      const isMin = box.classList.toggle('minimised');
+      const btn = $('omInfoMin');
+      if (btn) {
+        btn.textContent = isMin ? '+' : '−';
+        btn.title = isMin ? 'Expand panel' : 'Minimise panel';
+        btn.setAttribute('aria-expanded', String(!isMin));
+      }
+      const minTag = $('omInfoMinTag');
+      if (minTag) minTag.style.display = isMin ? 'inline-block' : 'none';
+    });
+
+    $('omInfoHead')?.addEventListener('click', (e) => {
+      if (e.target.closest('#omInfoClose') || e.target.closest('#omInfoMin')) return;
+      const box = $('omInfo');
+      if (box && box.classList.contains('minimised')) {
+        box.classList.remove('minimised');
+        const btn = $('omInfoMin');
+        if (btn) {
+          btn.textContent = '−';
+          btn.title = 'Minimise panel';
+          btn.setAttribute('aria-expanded', 'true');
+        }
+        const minTag = $('omInfoMinTag');
+        if (minTag) minTag.style.display = 'none';
+      }
     });
 
     $('omInfoClose')?.addEventListener('click', () => { selected = null; updateInfoPanel(null); refresh(); });

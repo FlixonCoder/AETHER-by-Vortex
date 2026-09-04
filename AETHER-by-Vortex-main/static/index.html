@@ -167,9 +167,15 @@
 
         <!-- Selected satellite -->
         <div class="om-panel" id="omInfo">
-          <div class="om-panel-head">
-            <h4 id="omInfoName">—</h4>
-            <button class="om-x" id="omInfoClose">✕</button>
+          <div class="om-panel-head" id="omInfoHead">
+            <div class="om-head-title">
+              <h4 id="omInfoName">—</h4>
+              <span class="om-tag om-tag-mini" id="omInfoMinTag" style="display:none">LEO</span>
+            </div>
+            <div class="om-panel-actions">
+              <button class="om-min" id="omInfoMin" title="Minimise panel" aria-label="Minimise panel" aria-expanded="true">−</button>
+              <button class="om-x" id="omInfoClose" title="Close info panel" aria-label="Close">✕</button>
+            </div>
           </div>
           <div class="om-info-tags">
             <span class="om-tag" id="omInfoTag">LEO</span>
