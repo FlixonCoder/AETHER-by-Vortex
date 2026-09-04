@@ -180,8 +180,15 @@
   function updateInfoPanel(pt) {
     const box = $('omInfo');
     if (!box) return;
-    if (!pt) { box.style.display = 'none'; return; }
-    box.style.display = 'block';
+    if (!pt) {
+      box.style.display = 'none';
+      $('omStage')?.classList.remove('has-info');
+      return;
+    }
+    box.style.display = 'flex';
+    if (!box.classList.contains('minimised')) {
+      $('omStage')?.classList.add('has-info');
+    }
 
     $('omInfoName').textContent = pt.name;
     $('omInfoNorad').textContent = pt.noradId || '—';
@@ -258,12 +265,20 @@
       const isMin = box.classList.toggle('minimised');
       const btn = $('omInfoMin');
       if (btn) {
-        btn.textContent = isMin ? '+' : '−';
         btn.title = isMin ? 'Expand panel' : 'Minimise panel';
         btn.setAttribute('aria-expanded', String(!isMin));
+        const icoMin = btn.querySelector('.om-ico-min');
+        const icoMax = btn.querySelector('.om-ico-max');
+        if (icoMin) icoMin.style.display = isMin ? 'none' : 'block';
+        if (icoMax) icoMax.style.display = isMin ? 'block' : 'none';
       }
       const minTag = $('omInfoMinTag');
       if (minTag) minTag.style.display = isMin ? 'inline-block' : 'none';
+      if (isMin) {
+        $('omStage')?.classList.remove('has-info');
+      } else {
+        $('omStage')?.classList.add('has-info');
+      }
     });
 
     $('omInfoHead')?.addEventListener('click', (e) => {
@@ -273,16 +288,66 @@
         box.classList.remove('minimised');
         const btn = $('omInfoMin');
         if (btn) {
-          btn.textContent = '−';
           btn.title = 'Minimise panel';
           btn.setAttribute('aria-expanded', 'true');
+          const icoMin = btn.querySelector('.om-ico-min');
+          const icoMax = btn.querySelector('.om-ico-max');
+          if (icoMin) icoMin.style.display = 'block';
+          if (icoMax) icoMax.style.display = 'none';
         }
         const minTag = $('omInfoMinTag');
         if (minTag) minTag.style.display = 'none';
+        $('omStage')?.classList.add('has-info');
       }
     });
 
     $('omInfoClose')?.addEventListener('click', () => { selected = null; updateInfoPanel(null); refresh(); });
+
+    // NASA EPIC minimisation & close controls
+    $('omEpicMin')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const epic = $('omEpic');
+      if (!epic) return;
+      const isMin = epic.classList.toggle('minimised');
+      const btn = $('omEpicMin');
+      if (btn) {
+        btn.title = isMin ? 'Expand NASA EPIC' : 'Minimise NASA EPIC';
+        const icoMin = btn.querySelector('.om-ico-min');
+        const icoMax = btn.querySelector('.om-ico-max');
+        if (icoMin) icoMin.style.display = isMin ? 'none' : 'block';
+        if (icoMax) icoMax.style.display = isMin ? 'block' : 'none';
+      }
+    });
+
+    $('omEpicHead')?.addEventListener('click', (e) => {
+      if (e.target.closest('#omEpicClose') || e.target.closest('#omEpicMin')) return;
+      const epic = $('omEpic');
+      if (epic && epic.classList.contains('minimised')) {
+        epic.classList.remove('minimised');
+        const btn = $('omEpicMin');
+        if (btn) {
+          btn.title = 'Minimise NASA EPIC';
+          const icoMin = btn.querySelector('.om-ico-min');
+          const icoMax = btn.querySelector('.om-ico-max');
+          if (icoMin) icoMin.style.display = 'block';
+          if (icoMax) icoMax.style.display = 'none';
+        }
+      }
+    });
+
+    $('omEpicClose')?.addEventListener('click', () => {
+      const epic = $('omEpic');
+      if (epic) epic.style.display = 'none';
+      $('omToggleEpic')?.classList.remove('active');
+    });
+
+    $('omToggleEpic')?.addEventListener('click', (e) => {
+      const epic = $('omEpic');
+      if (!epic) return;
+      const isHidden = epic.style.display === 'none';
+      epic.style.display = isHidden ? 'block' : 'none';
+      e.currentTarget.classList.toggle('active', isHidden);
+    });
 
     document.querySelectorAll('.om-legend-row').forEach((row) => {
       row.addEventListener('click', () => {

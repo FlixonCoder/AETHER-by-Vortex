@@ -158,7 +158,7 @@
     </section>
 
     <section class="page" id="page-orbitmap">
-      <div class="om-stage">
+      <div class="om-stage" id="omStage">
         <div id="omGlobe"></div>
 
         <div class="om-panel" id="omStatusWrap">
@@ -173,8 +173,13 @@
               <span class="om-tag om-tag-mini" id="omInfoMinTag" style="display:none">LEO</span>
             </div>
             <div class="om-panel-actions">
-              <button class="om-min" id="omInfoMin" title="Minimise panel" aria-label="Minimise panel" aria-expanded="true">−</button>
-              <button class="om-x" id="omInfoClose" title="Close info panel" aria-label="Close">✕</button>
+              <button class="om-min" id="omInfoMin" title="Minimise panel" aria-label="Minimise panel" aria-expanded="true">
+                <svg class="om-ico-min" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="2.5" y1="8" x2="13.5" y2="8"/></svg>
+                <svg class="om-ico-max" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="display:none"><line x1="2.5" y1="8" x2="13.5" y2="8"/><line x1="8" y1="2.5" x2="8" y2="13.5"/></svg>
+              </button>
+              <button class="om-x" id="omInfoClose" title="Close info panel" aria-label="Close">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3.5" y1="3.5" x2="12.5" y2="12.5"/><line x1="12.5" y1="3.5" x2="3.5" y2="12.5"/></svg>
+              </button>
             </div>
           </div>
           <div class="om-info-tags">
@@ -234,6 +239,18 @@
 
         <!-- NASA EPIC real Earth imagery -->
         <div class="om-panel" id="omEpic">
+          <div class="om-panel-head" id="omEpicHead">
+            <h4>NASA EPIC · DSCOVR</h4>
+            <div class="om-panel-actions">
+              <button class="om-min" id="omEpicMin" title="Minimise NASA EPIC image" aria-label="Minimise">
+                <svg class="om-ico-min" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="2.5" y1="8" x2="13.5" y2="8"/></svg>
+                <svg class="om-ico-max" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="display:none"><line x1="2.5" y1="8" x2="13.5" y2="8"/><line x1="8" y1="2.5" x2="8" y2="13.5"/></svg>
+              </button>
+              <button class="om-x" id="omEpicClose" title="Hide NASA EPIC" aria-label="Close">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3.5" y1="3.5" x2="12.5" y2="12.5"/><line x1="12.5" y1="3.5" x2="3.5" y2="12.5"/></svg>
+              </button>
+            </div>
+          </div>
           <img id="omEpicImg" alt="NASA EPIC Earth image">
           <div class="om-epic-meta">
             <div class="d" id="omEpicDate">loading…</div>
@@ -246,6 +263,7 @@
           <button class="om-btn" id="omTrackLyra" title="Track LYRA-1">🎯</button>
           <button class="om-btn active" id="omToggleOrbit" title="Toggle orbit path">🛰</button>
           <button class="om-btn" id="omToggleLabels" title="Toggle labels">🏷</button>
+          <button class="om-btn active" id="omToggleEpic" title="Toggle NASA EPIC image">🌍</button>
           <button class="om-btn" id="omHome" title="Reset view">⌂</button>
         </div>
       </div>
