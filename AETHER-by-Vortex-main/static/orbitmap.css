@@ -1,0 +1,184 @@
+/* ============================================================================
+   ORBIT MAP — satellitemap.space-inspired glass UI over a full-bleed globe
+   ========================================================================== */
+
+#page-orbitmap.page {
+  padding: 0;
+  position: relative;
+  /* Pre-JS fallback: topbar (76) + .main vertical padding (40). The exact
+     height is set from the measured position in orbitmap.js on resize. */
+  height: calc(100vh - 116px);
+  min-height: 380px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 40%, #0a1424 0%, #050a14 55%, #01030a 100%);
+}
+
+.om-stage { position: absolute; inset: 0; }
+
+#omGlobe {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+}
+#omGlobe:active { cursor: grabbing; }
+
+/* Faint starfield behind the globe */
+#page-orbitmap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1px 1px at 70% 20%, rgba(255,255,255,.35), transparent),
+    radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1px 1px at 85% 60%, rgba(255,255,255,.3), transparent),
+    radial-gradient(1px 1px at 12% 85%, rgba(255,255,255,.35), transparent),
+    radial-gradient(1px 1px at 60% 90%, rgba(255,255,255,.25), transparent);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------ glass panel */
+.om-panel {
+  position: absolute;
+  z-index: 6;
+  background: rgba(11, 18, 32, .82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(120, 160, 220, .18);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .55);
+  color: #cfe0f5;
+}
+
+.om-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(120, 160, 220, .14);
+}
+.om-panel-head h4 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: .16em;
+  font-weight: 700;
+  color: #eaf2ff;
+  text-transform: uppercase;
+}
+.om-x {
+  background: none; border: none; color: #7f93ad;
+  font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 4px;
+}
+.om-x:hover { color: #e6efff; }
+
+/* --------------------------------------------------------- info (top-left) */
+#omInfo {
+  top: 18px; left: 18px;
+  width: 310px;
+  display: none;
+}
+.om-info-tags { display: flex; gap: 6px; padding: 10px 14px 4px; }
+.om-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  padding: 3px 9px; border-radius: 999px;
+  background: rgba(56, 189, 248, .14);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, .3);
+}
+.om-rows { padding: 6px 14px 14px; }
+.om-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(120, 160, 220, .1);
+  font-size: 12.5px;
+}
+.om-row:last-child { border-bottom: none; }
+.om-row .k { color: #8299b5; }
+.om-row .v { color: #eaf2ff; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ----------------------------------------------------- selector (top-right) */
+#omSelector { top: 18px; right: 18px; width: 250px; }
+.om-sel-body { padding: 6px 8px 10px; max-height: 210px; overflow-y: auto; }
+.om-sel-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 7px; cursor: pointer;
+  font-size: 12.5px;
+}
+.om-sel-row:hover { background: rgba(56, 189, 248, .1); }
+.om-sel-info {
+  font-size: 10px; color: #38bdf8; text-transform: uppercase;
+  letter-spacing: .08em; font-weight: 700;
+}
+.om-sel-name { flex: 1; color: #dbe7f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.om-sel-x { background: none; border: none; color: #64748b; cursor: pointer; font-size: 11px; }
+.om-sel-x:hover { color: #f87171; }
+.om-empty { padding: 12px 10px; font-size: 12px; color: #64748b; text-align: center; }
+
+/* ---------------------------------------------------- legend (bottom-right) */
+#omLegend { bottom: 18px; right: 18px; width: 226px; }
+.om-legend-body { padding: 8px; }
+.om-legend-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px; border-radius: 7px; cursor: pointer;
+  font-size: 12.5px; color: #dbe7f7;
+  transition: opacity .15s;
+}
+.om-legend-row:hover { background: rgba(120, 160, 220, .08); }
+.om-legend-row.off { opacity: .33; }
+.om-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; box-shadow: 0 0 8px currentColor; }
+.om-legend-row .lbl { flex: 1; }
+.om-legend-row .cnt { color: #7f93ad; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.om-legend-foot {
+  padding: 9px 14px; border-top: 1px solid rgba(120,160,220,.14);
+  font-size: 11px; color: #7f93ad; display: flex; justify-content: space-between;
+}
+.om-legend-foot b { color: #7dd3fc; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------- toolbar (bottom-left) */
+#omToolbar {
+  bottom: 18px; left: 18px;
+  display: flex; gap: 6px; padding: 7px;
+}
+.om-btn {
+  width: 38px; height: 38px; border-radius: 9px;
+  background: rgba(20, 30, 48, .8);
+  border: 1px solid rgba(120, 160, 220, .16);
+  color: #9fb5cf; font-size: 15px; cursor: pointer;
+  display: grid; place-items: center;
+  transition: all .15s;
+}
+.om-btn:hover { color: #eaf2ff; border-color: rgba(56,189,248,.45); }
+.om-btn.active { background: rgba(56, 189, 248, .16); color: #7dd3fc; border-color: rgba(56,189,248,.5); }
+
+/* ------------------------------------------------------- status (top-center) */
+#omStatusWrap {
+  top: 18px; left: 50%; transform: translateX(-50%);
+  padding: 8px 16px;
+  font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: #7dd3fc; font-weight: 600;
+  display: flex; align-items: center; gap: 9px;
+}
+#omStatusWrap .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: #22d3ee;
+  box-shadow: 0 0 10px #22d3ee;
+  animation: omPulse 1.8s ease-in-out infinite;
+}
+@keyframes omPulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+.om-err { color: #fca5a5 !important; }
+
+/* --------------------------------------------------- NASA EPIC (mid-left) */
+#omEpic { left: 18px; bottom: 74px; width: 210px; }
+#omEpicImg {
+  width: 100%; aspect-ratio: 1; object-fit: cover;
+  display: block; background: #060c18;
+  border-bottom: 1px solid rgba(120,160,220,.14);
+}
+.om-epic-meta { padding: 9px 12px; font-size: 10.5px; line-height: 1.5; }
+.om-epic-meta .d { color: #7dd3fc; font-weight: 700; font-variant-numeric: tabular-nums; }
+.om-epic-meta .c { color: #7f93ad; }
+
+@media (max-width: 1100px) {
+  #omEpic, #omLegend { display: none; }
+  #omInfo, #omSelector { width: 220px; }
+}

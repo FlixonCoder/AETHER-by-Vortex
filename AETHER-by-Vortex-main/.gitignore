@@ -1,0 +1,119 @@
+# ============================================================
+#  SatOps AI — Comprehensive .gitignore
+# ============================================================
+
+# --- Environment & Credentials ---
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.cert
+
+# --- Python & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Virtual Environments ---
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# --- Testing & Code Quality ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# --- Project Runtime & Generated Data ---
+runbooks/
+runbook/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+ruvector.db
+.cache/
+logs/
+*.log
+audit/*.jsonl
+
+
+# --- Temporary & Backup Files ---
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+_backup/
+static/_backup/
+
+# --- Node / Frontend Artifacts ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# --- AI & IDE Tooling Artifacts ---
+.claude-flow/
+.swarm/
+.cursor/
+.agents/
+.gemini/
+
+# --- IDE & Editors ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- Operating System Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini

@@ -1,0 +1,135 @@
+--- orig/AETHER-by-Vortex-main/static/app.js	2026-09-04 00:09:18.000000000 +0000
++++ w2/AETHER-by-Vortex-main/static/app.js	2026-09-04 03:55:36.456980816 +0000
+@@ -165,6 +165,8 @@
+     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+     btn.classList.add('active');
+     $('page-' + btn.dataset.page).classList.add('active');
++    // T2: stop SGP4 propagation and globe rendering when the map is hidden.
++    if (window.orbitMapSetPageActive) window.orbitMapSetPageActive(btn.dataset.page === 'orbitmap');
+     if (btn.dataset.page === 'telemetry') { drawAllCharts(); renderRollingAnalysis(); }
+     if (btn.dataset.page === 'anomalies') renderAnomalies();
+     if (btn.dataset.page === 'memory') loadMemory();
+@@ -410,11 +412,18 @@
+   const tv = latestTelemetry;
+   if (tv.battery_soc_pct == null) return;
+ 
+-  const phase = (latestOrbital.orbital_phase_pct || 0) / 100 * 2 * Math.PI;
+-  const alt = 512.6 + 2.2 * Math.sin(phase);
+-  const vel = 7.56 + 0.008 * Math.cos(phase);
+-  $('ovAlt').textContent = alt.toFixed(1) + ' km';
+-  $('ovVel').textContent = vel.toFixed(2) + ' km/s';
++  // T3: if a reference satellite has been picked on the Orbit Map, these two
++  // readouts show its real SGP4 state. Otherwise they fall back to LYRA-1's
++  // simulated orbit, which is a closed-form approximation, not telemetry.
++  const ref = window.orbitMapReferenceState ? window.orbitMapReferenceState() : null;
++  if (ref) {
++    setReadout('ovAlt', ref.altKm.toFixed(1) + ' km');
++    setReadout('ovVel', (ref.speedKms * 3600).toFixed(0) + ' km/h');
++  } else {
++    const phase = (latestOrbital.orbital_phase_pct || 0) / 100 * 2 * Math.PI;
++    setReadout('ovAlt', (512.6 + 2.2 * Math.sin(phase)).toFixed(1) + ' km');
++    setReadout('ovVel', (7.56 + 0.008 * Math.cos(phase)).toFixed(2) + ' km/s');
++  }
+ 
+   const batt = Math.max(0, Math.min(100, tv.battery_soc_pct));
+   const solar = Math.max(0, Math.min(100, tv.solar_current_a / 8.5 * 100));
+@@ -918,12 +927,43 @@
+     currentRunbook = fn;
+     $('runbookView').style.display = 'block';
+     $('runbookTitle').textContent = fn;
+-    $('runbookBody').textContent = d.content || '(empty)';
++    runbookSource = d.content || '';
++    paintRunbook();
+     renderRunbookList();
+   } catch (e) { addLog('ERROR', 'Failed to load runbook: ' + e.message); }
+ };
+ $('runbookClose').addEventListener('click', () => { $('runbookView').style.display = 'none'; currentRunbook = null; renderRunbookList(); });
+-$('runbookDl').addEventListener('click', () => { if (currentRunbook) download(currentRunbook, $('runbookBody').textContent, 'text/markdown'); });
++$('runbookDl').addEventListener('click', () => { if (currentRunbook) download(currentRunbook, runbookSource, 'text/markdown'); });
++
++/* ---------------- T5: runbook markdown rendering ---------------- */
++let runbookSource = '';
++let runbookView = 'rendered';
++
++function paintRunbook() {
++  const body = $('runbookBody');
++  if (runbookView === 'rendered') {
++    body.classList.add('md-rendered');
++    body.innerHTML = AetherMD.render(runbookSource);
++  } else {
++    body.classList.remove('md-rendered');
++    body.textContent = runbookSource || '(empty)';
++  }
++  $('mdViewRendered').classList.toggle('active', runbookView === 'rendered');
++  $('mdViewSource').classList.toggle('active', runbookView === 'source');
++}
++
++$('mdViewRendered').addEventListener('click', () => { runbookView = 'rendered'; paintRunbook(); });
++$('mdViewSource').addEventListener('click', () => { runbookView = 'source'; paintRunbook(); });
++
++/* Cross-fade a readout instead of snapping it. Used by the Overview panel. */
++function setReadout(id, text) {
++  const el = $(id);
++  if (!el || el.textContent === text) return;
++  el.textContent = text;
++  el.classList.remove('val-swap');
++  void el.offsetWidth;          // force reflow so the animation re-runs
++  el.classList.add('val-swap');
++}
+ $('reportRefresh').addEventListener('click', async () => {
+   try {
+     const r = await fetch('/api/runbooks'); const d = await r.json();
+--- orig/AETHER-by-Vortex-main/static/index.html	2026-09-04 00:09:18.000000000 +0000
++++ w2/AETHER-by-Vortex-main/static/index.html	2026-09-04 07:16:10.552574573 +0000
+@@ -6,9 +6,11 @@
+ <title>VORTEX — Satellite Ops Dashboard</title>
+ <link rel="stylesheet" href="/static/styles.css">
+ <link rel="stylesheet" href="/static/orbitmap.css">
++  <link rel="stylesheet" href="/static/console.css">
+ <link rel="stylesheet" href="/static/hero.css">
+ </head>
+-<body>
++<body class="no-scroll-shell">
++<div class="narrow-warning">Mission console requires a wider display.</div>
+ 
+ <header class="topbar">
+   <div class="topbar-left">
+@@ -28,7 +30,7 @@
+ 
+ <div class="notif-panel" id="notifPanel">
+   <div class="notif-head"><span>NOTIFICATIONS</span><button class="link-btn" id="notifClear">Clear all</button></div>
+-  <div class="notif-list" id="notifList"><div class="empty-msg">No notifications</div></div>
++  <div class="notif-list" id="notifList" data-scroll="notifications"><div class="empty-msg">No notifications</div></div>
+ </div>
+ 
+ <div class="layout">
+@@ -331,13 +333,13 @@
+       <div class="report-layout">
+         <div class="card report-list-card">
+           <div class="card-head"><h3>GENERATED RUNBOOKS</h3></div>
+-          <div id="runbookList"><p class="empty-msg">No runbooks yet — they are generated automatically when the pipeline resolves an anomaly.</p></div>
++          <div id="runbookList" data-scroll="runbook-list"><p class="empty-msg">No runbooks yet — they are generated automatically when the pipeline resolves an anomaly.</p></div>
+         </div>
+         <div class="card report-view-card" id="runbookView" style="display:none">
+           <div class="card-head"><h3 id="runbookTitle">—</h3>
+-            <div class="row-gap"><button class="btn sm" id="runbookDl">⬇ Download .md</button><button class="btn sm" id="runbookClose">✕ Close</button></div>
++            <div class="row-gap"><span class="md-toggle"><button id="mdViewRendered" class="active">Rendered</button><button id="mdViewSource">Source</button></span><button class="btn sm" id="runbookDl">⬇ Download .md</button><button class="btn sm" id="runbookClose">✕ Close</button></div>
+           </div>
+-          <pre class="mono-box tall" id="runbookBody"></pre>
++          <pre class="mono-box tall" id="runbookBody" data-scroll="runbook"></pre>
+         </div>
+       </div>
+     </section>
+@@ -449,8 +451,10 @@
+ <script src="/static/vendor/satellite.min.js"></script>
+ <script src="/static/vendor/three.min.js"></script>
+ <script src="/static/vendor/globe.gl.min.js"></script>
+-<script src="/static/app.js"></script>
+-<script src="/static/orbitmap.js"></script>
++<script src="/static/md.js"></script>
++  <script src="/static/app.js"></script>
++<script src="/static/satmesh.js"></script>
++  <script src="/static/orbitmap.js"></script>
+ <script src="/static/hero.js"></script>
+ </body>
+ </html>

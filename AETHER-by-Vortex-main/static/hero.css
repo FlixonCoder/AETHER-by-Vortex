@@ -1,0 +1,29 @@
+/* Cinematic hero scene in the Overview visual card. */
+
+.visual-card { position: relative; overflow: hidden; }
+
+#heroStage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse at 50% 120%, #0d2547 0%, #061125 45%, #02060f 100%);
+}
+#heroStage canvas { display: block; width: 100% !important; height: 100% !important; }
+
+/* Vignette + subtle scanline sheen for a filmic finish. */
+#heroStage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(0, 0, 0, .55) 100%);
+}
+
+/* Once the 3D stage exists, retire the flat 2D canvas underneath it. */
+#heroStage:not(.hero-failed) ~ #spaceCanvas { display: none; }
+
+/* Keep the existing control buttons and footer readable above the scene. */
+.visual-card .visual-side,
+.visual-card .visual-foot { position: absolute; z-index: 3; }

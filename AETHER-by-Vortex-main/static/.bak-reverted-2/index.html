@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VORTEX — Satellite Ops Dashboard</title>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/orbitmap.css">
+  <link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/hero.css">
+</head>
+<body class="no-scroll-shell">
+<!-- Console icon set. Replaces emoji glyphs across the sidebar, the Overview
+     HUD panels, and the subsystem grid with a single consistent line-icon
+     language (1.6px stroke, 24x24, currentColor) — referenced via <use>. -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+<defs>
+<symbol id="i-satellite" viewBox="0 0 24 24"><rect x="9.5" y="9" width="5" height="6" rx="1"/><path d="M9.5 10.5H5.5V13.5H9.5M14.5 10.5H18.5V13.5H14.5M6 8.5V15.5M18 8.5V15.5M12 9V4M10.3 3L13.7 3"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="3.6" ry="8.5"/><path d="M3.5 12H20.5M4.6 8H19.4M4.6 16H19.4"/></symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2.5 12H7L9 6.5L13 17.5L15.5 12H21.5"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5L21.5 20H2.5L12 3.5Z"/><path d="M12 9.5V14"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-loop" viewBox="0 0 24 24"><path d="M4 12A8 8 0 0 1 18.5 7M18.5 7V3M18.5 7H14.5"/><path d="M20 12A8 8 0 0 1 5.5 17M5.5 17V21M5.5 17H9.5"/></symbol>
+<symbol id="i-nodes" viewBox="0 0 24 24"><circle cx="5.5" cy="7" r="2"/><circle cx="18.5" cy="7" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7.3 8.1L10.3 16.2M16.7 8.1L13.7 16.2M7.5 7H16.5"/></symbol>
+<symbol id="i-ledger" viewBox="0 0 24 24"><rect x="4.5" y="3" width="15" height="18" rx="1.5"/><path d="M8 8H16M8 12H16M8 16H12.5"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="1.5"/><path d="M7 9.5L10.5 12L7 14.5M12.5 14.5H17"/></symbol>
+<symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 3.5H14M10.5 3.5V9.5L5.5 18.5A1.5 1.5 0 0 0 7 20.5H17A1.5 1.5 0 0 0 18.5 18.5L13.5 9.5V3.5"/><path d="M8 15H16"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M6.5 3H14L18.5 7.5V21H6.5V3Z"/><path d="M14 3V7.5H18.5"/><path d="M9.5 12.5H15.5M9.5 16H15.5"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4"/><path d="M12 3.5V6M12 18V20.5M20.5 12H18M6 12H3.5M18 6L16.2 7.8M7.8 16.2L6 18M18 18L16.2 16.2M7.8 7.8L6 6"/></symbol>
+<symbol id="i-orbit" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="4.2" transform="rotate(-24 12 12)"/><circle cx="20" cy="8.6" r="1.3" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-altitude" viewBox="0 0 24 24"><path d="M12 3L16 8H8L12 3Z"/><path d="M4.5 12.5H19.5M6 17H18"/></symbol>
+<symbol id="i-velocity" viewBox="0 0 24 24"><path d="M4 12H15.5M12 6.5L18 12L12 17.5"/></symbol>
+<symbol id="i-battery" viewBox="0 0 24 24"><rect x="2.5" y="7.5" width="16" height="9" rx="1.5"/><path d="M21 10.5V13.5"/><rect x="5" y="10" width="8" height="4" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5V5M12 19V21.5M21.5 12H19M5 12H2.5M18.5 5.5L16.8 7.2M7.2 16.8L5.5 18.5M18.5 18.5L16.8 16.8M7.2 7.2L5.5 5.5"/></symbol>
+<symbol id="i-thermo" viewBox="0 0 24 24"><path d="M13 14.2V5.5A1.8 1.8 0 0 0 9.4 5.5V14.2A3.8 3.8 0 1 0 13 14.2Z"/><path d="M11.2 7.5V13.8"/></symbol>
+<symbol id="i-eclipse" viewBox="0 0 24 24"><circle cx="10.5" cy="12" r="7.5"/><path d="M15.8 6.2A7.5 7.5 0 0 1 15.8 17.8A6 6 0 0 0 15.8 6.2Z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M15 9L13 13L9 15L11 11L15 9Z"/></symbol>
+<symbol id="i-cpu" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9.5 3.5V7M14.5 3.5V7M9.5 17V20.5M14.5 17V20.5M3.5 9.5H7M3.5 14.5H7M17 9.5H20.5M17 14.5H20.5"/></symbol>
+<symbol id="i-camera" viewBox="0 0 24 24"><path d="M3.5 8H8L9.5 5.5H14.5L16 8H20.5V19H3.5V8Z"/><circle cx="12" cy="13.3" r="3.4"/></symbol>
+<symbol id="i-thruster" viewBox="0 0 24 24"><path d="M9 3.5H15L16.5 14H7.5L9 3.5Z"/><path d="M9 14L7 21M15 14L17 21M12 14V21"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 10.5A6 6 0 0 1 18 10.5C18 15 19.5 16.5 19.5 16.5H4.5S6 15 6 10.5Z"/><path d="M10 19.5A2 2 0 0 0 14 19.5"/></symbol>
+</defs>
+</svg>
+<div class="narrow-warning">Mission console requires a wider display.</div>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="chip"><span class="ico">📅</span><span id="topDate">—</span></div>
+    <div class="chip"><span class="ico">🕒</span><span id="topClock">—</span></div>
+  </div>
+  <div class="topbar-center">
+    <div class="brand">VORTEX</div>
+    <div class="brand-sub">SATELLITE OPS DASHBOARD</div>
+  </div>
+  <div class="topbar-right">
+    <div class="chip ai-chip" id="aiModeChip" title="Active AI Tier (Ollama -> Groq -> Rule Engine)"><span class="dot dot-cyan" id="aiModeDot"></span><span id="aiModeText">AI: CONNECTING…</span></div>
+    <div class="chip sys-chip" id="sysChip"><span class="dot dot-amber" id="sysDot"></span><span id="sysText">CONNECTING…</span></div>
+    <button class="bell" id="bellBtn" title="Notifications">🔔<span class="badge" id="notifBadge" style="display:none">0</span></button>
+  </div>
+</header>
+
+<div class="notif-panel" id="notifPanel">
+  <div class="notif-head"><span>NOTIFICATIONS</span><button class="link-btn" id="notifClear">Clear all</button></div>
+  <div class="notif-list" id="notifList" data-scroll="notifications"><div class="empty-msg">No notifications</div></div>
+</div>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <button class="nav-item active" data-page="overview"><svg class="nav-ico"><use href="#i-satellite"/></svg><span>Overview</span></button>
+    <button class="nav-item" data-page="orbitmap"><svg class="nav-ico"><use href="#i-globe"/></svg><span>Orbit Map</span></button>
+    <button class="nav-item" data-page="telemetry"><svg class="nav-ico"><use href="#i-pulse"/></svg><span>Telemetry</span></button>
+    <button class="nav-item" data-page="anomalies"><svg class="nav-ico"><use href="#i-alert"/></svg><span>Anomalies</span><span class="nav-count" id="navAnoCount" style="display:none">0</span></button>
+    <button class="nav-item" data-page="workflow"><svg class="nav-ico"><use href="#i-loop"/></svg><span>Workflow</span></button>
+    <button class="nav-item" data-page="memory"><svg class="nav-ico"><use href="#i-nodes"/></svg><span>RAG Memory</span></button>
+    <button class="nav-item" data-page="audit"><svg class="nav-ico"><use href="#i-ledger"/></svg><span>Audit Trail</span></button>
+    <button class="nav-item" data-page="commands"><svg class="nav-ico"><use href="#i-terminal"/></svg><span>Commands</span></button>
+    <button class="nav-item" data-page="simulations"><svg class="nav-ico"><use href="#i-flask"/></svg><span>Simulations</span></button>
+    <button class="nav-item" data-page="reports"><svg class="nav-ico"><use href="#i-doc"/></svg><span>Reports</span></button>
+    <button class="nav-item" data-page="settings"><svg class="nav-ico"><use href="#i-gear"/></svg><span>Settings</span></button>
+  </nav>
+
+  <main class="main">
+
+    <section class="page active" id="page-overview">
+      <div class="ov-grid">
+        <div class="card">
+          <div class="card-head"><h3>SATELLITE STATUS</h3><span class="tag tag-green" id="satTag">NOMINAL</span></div>
+          <ul class="stat-list">
+            <li><span class="s-ico">🌐</span><span class="s-lab">Orbit</span><span class="s-val">LEO</span></li>
+            <li><span class="s-ico">📡</span><span class="s-lab">Altitude</span><span class="s-val" id="ovAlt">—</span></li>
+            <li><span class="s-ico">🚀</span><span class="s-lab">Velocity</span><span class="s-val" id="ovVel">—</span></li>
+            <li class="bar-row"><span class="s-ico">🔋</span><span class="s-lab">Battery</span>
+              <span class="s-val" id="ovBatt">—</span>
+              <div class="mini-bar"><div class="mini-fill" id="ovBattBar"></div></div></li>
+            <li class="bar-row"><span class="s-ico">☀️</span><span class="s-lab">Solar Array</span>
+              <span class="s-val" id="ovSolar">—</span>
+              <div class="mini-bar"><div class="mini-fill" id="ovSolarBar"></div></div></li>
+            <li><span class="s-ico">🌡️</span><span class="s-lab">Temperature</span><span class="s-val" id="ovTemp">—</span></li>
+            <li><span class="s-ico">🌘</span><span class="s-lab">Eclipse</span><span class="s-val" id="ovEclipse">—</span></li>
+            <li><span class="s-ico">🧭</span><span class="s-lab">Orbit Phase</span><span class="s-val" id="ovPhase">—</span></li>
+          </ul>
+        </div>
+
+        <div class="card visual-card">
+          <!-- Cinematic WebGL scene; the 2D canvas below stays as a fallback
+               and is hidden by hero.css once the 3D stage is running. -->
+          <div id="heroStage"></div>
+          <canvas id="spaceCanvas"></canvas>
+          <div class="visual-side">
+            <button class="vc-btn active" id="vcOrbit" title="Toggle orbit path">🌐</button>
+            <button class="vc-btn" id="vcGrid" title="Toggle grid">🎯</button>
+            <button class="vc-btn active" id="vc3d" title="Toggle animation">3D</button>
+          </div>
+          <div class="visual-foot"><span id="visInfo">TICK — · PHASE —%</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>QUICK HEALTH CHECK</h3></div>
+          <div class="ring-wrap">
+            <svg viewBox="0 0 130 130" class="ring">
+              <circle class="ring-bg" cx="65" cy="65" r="56"/>
+              <circle class="ring-val" id="ringVal" cx="65" cy="65" r="56"/>
+            </svg>
+            <div class="ring-center"><span class="ring-pct" id="ringPct">—</span><span class="ring-sub">OVERALL HEALTH</span></div>
+          </div>
+          <ul class="subsys-list" id="quickSubsys"></ul>
+        </div>
+      </div>
+
+      <div class="ov-bottom">
+        <div class="card">
+          <div class="card-head"><h3>WORKFLOW PROGRESS</h3><span class="tag" id="wfModeTag">MONITORING</span></div>
+          <div class="wf-track" id="wfTrackOv"></div>
+          <div class="wf-bar">
+            <span class="wf-spark">✦</span>
+            <span><b>Current Stage:</b> <span id="wfMsgOv">Awaiting telemetry…</span></span>
+            <span class="wf-eta">ETA Next: <b id="wfEtaOv">--:--:--</b></span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>LOGS</h3><button class="link-btn" id="logsViewAll">View All</button></div>
+          <div class="log-stream" id="logStreamOv"></div>
+          <div class="row-gap">
+            <input class="input" id="logSearchOv" placeholder="Search logs…">
+            <select class="input sel" id="logFilterOv"><option value="">ALL</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-orbitmap">
+      <div class="om-stage">
+        <div id="omGlobe"></div>
+
+        <div class="om-panel" id="omStatusWrap">
+          <span class="pulse"></span><span id="omStatus">Initialising…</span>
+        </div>
+
+        <!-- Selected satellite -->
+        <div class="om-panel" id="omInfo">
+          <div class="om-panel-head">
+            <h4 id="omInfoName">—</h4>
+            <button class="om-x" id="omInfoClose">✕</button>
+          </div>
+          <div class="om-info-tags">
+            <span class="om-tag" id="omInfoTag">LEO</span>
+            <span class="om-tag" id="omInfoTag2" style="display:none">NOMINAL</span>
+          </div>
+          <div class="om-rows">
+            <div class="om-row"><span class="k">NORAD ID</span><span class="v" id="omInfoNorad">—</span></div>
+            <div class="om-row"><span class="k">Intl Designator</span><span class="v" id="omInfoIntl">—</span></div>
+            <div class="om-row"><span class="k">Constellation</span><span class="v" id="omInfoConst">—</span></div>
+            <div class="om-row"><span class="k">Latitude</span><span class="v" id="omInfoLat">—</span></div>
+            <div class="om-row"><span class="k">Longitude</span><span class="v" id="omInfoLng">—</span></div>
+            <div class="om-row"><span class="k">Altitude</span><span class="v" id="omInfoAlt">—</span></div>
+            <div class="om-row"><span class="k">Velocity</span><span class="v" id="omInfoVel">—</span></div>
+            <div class="om-row"><span class="k">Period</span><span class="v" id="omInfoPeriod">—</span></div>
+          </div>
+        </div>
+
+        <!-- Watchlist -->
+        <div class="om-panel" id="omSelector">
+          <div class="om-panel-head">
+            <h4>Selector</h4>
+            <button class="om-x" id="omClearSel" title="Clear all">clear</button>
+          </div>
+          <div class="om-sel-body" id="omSelectorList">
+            <div class="om-empty">Click a satellite to track</div>
+          </div>
+        </div>
+
+        <!-- Constellation legend -->
+        <div class="om-panel" id="omLegend">
+          <div class="om-panel-head"><h4>Constellations</h4></div>
+          <div class="om-legend-body">
+            <div class="om-legend-row" data-kind="starlink">
+              <span class="om-swatch" style="background:#38bdf8;color:#38bdf8"></span>
+              <span class="lbl">Starlink</span><span class="cnt" id="omLegendCount-starlink">…</span>
+            </div>
+            <div class="om-legend-row" data-kind="stations">
+              <span class="om-swatch" style="background:#34d399;color:#34d399"></span>
+              <span class="lbl">Space Stations</span><span class="cnt" id="omLegendCount-stations">…</span>
+            </div>
+            <div class="om-legend-row" data-kind="gps">
+              <span class="om-swatch" style="background:#f59e0b;color:#f59e0b"></span>
+              <span class="lbl">GPS / Nav</span><span class="cnt" id="omLegendCount-gps">…</span>
+            </div>
+            <div class="om-legend-row" data-kind="weather">
+              <span class="om-swatch" style="background:#c084fc;color:#c084fc"></span>
+              <span class="lbl">Weather</span><span class="cnt" id="omLegendCount-weather">…</span>
+            </div>
+            <div class="om-legend-row" style="cursor:default">
+              <span class="om-swatch" style="background:#22d3ee;color:#22d3ee"></span>
+              <span class="lbl">LYRA-1 (ours)</span><span class="cnt">1</span>
+            </div>
+          </div>
+          <div class="om-legend-foot"><span>Tracked objects</span><b id="omCount">0</b></div>
+        </div>
+
+        <!-- NASA EPIC real Earth imagery -->
+        <div class="om-panel" id="omEpic">
+          <img id="omEpicImg" alt="NASA EPIC Earth image">
+          <div class="om-epic-meta">
+            <div class="d" id="omEpicDate">loading…</div>
+            <div class="c" id="omEpicCap">NASA DSCOVR · EPIC</div>
+          </div>
+        </div>
+
+        <!-- View controls -->
+        <div class="om-panel" id="omToolbar">
+          <button class="om-btn" id="omTrackLyra" title="Track LYRA-1">🎯</button>
+          <button class="om-btn active" id="omToggleOrbit" title="Toggle orbit path">🛰</button>
+          <button class="om-btn" id="omToggleLabels" title="Toggle labels">🏷</button>
+          <button class="om-btn" id="omHome" title="Reset view">⌂</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-telemetry">
+      <div class="page-head"><h2>Telemetry &amp; Health</h2>
+        <div class="row-gap">
+          <span class="chip"><span class="dot dot-green pulse"></span>&nbsp;LIVE · 2s</span>
+          <button class="btn sm" id="telPause">⏸ Pause</button>
+          <button class="btn sm" id="telCsv">⬇ Export CSV</button>
+          <button class="btn sm" id="runDiag">Run Diagnostics Sweep</button>
+        </div>
+      </div>
+
+      <!-- Subsystem health, at a glance — the former Health page's summary,
+           now the entry point into the same page as the detail behind it. -->
+      <div class="health-grid" id="healthGrid"></div>
+
+      <div class="chart-grid" id="chartGrid"></div>
+
+      <!-- 60-second Rolling Analysis Card -->
+      <div class="card rolling-card">
+        <div class="card-head">
+          <h3>60s ROLLING TELEMETRY ANALYSIS</h3>
+          <div class="row-gap">
+            <span class="chip" id="rollingWindowChip"><span class="dot dot-cyan pulse"></span>&nbsp;60s window · live</span>
+            <span class="tag" id="rollingFilterTag">FILTER ACTIVE</span>
+          </div>
+        </div>
+        <p class="rolling-desc">Statistical baseline comparison — distinguishes persistent anomalies from transient noise. <b>Spikes</b> are suppressed; only <b>persistent deviations</b> escalate to the agent pipeline.</p>
+        <div class="rolling-grid" id="rollingGrid">
+          <div class="empty-msg">Awaiting telemetry samples…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>RAW TELEMETRY PACKETS</h3></div>
+        <div class="tbl-wrap">
+          <table class="tbl"><thead><tr id="pktHead"></tr></thead><tbody id="pktBody"></tbody></table>
+        </div>
+      </div>
+
+      <div class="card" id="diagCard" style="display:none">
+        <div class="card-head"><h3>DIAGNOSTICS SWEEP</h3><span class="tag" id="diagTag">RUNNING</span></div>
+        <pre class="mono-box" id="diagOut"></pre>
+      </div>
+    </section>
+
+    <section class="page" id="page-anomalies">
+      <div class="page-head"><h2>Anomalies</h2>
+        <div class="row-gap">
+          <select class="input sel" id="anoFilter"><option value="">All severities</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>
+          <button class="btn sm danger" id="anoInjectBtn">⚡ Inject Anomaly</button>
+        </div>
+      </div>
+      <div class="mini-stats">
+        <div class="card mini-stat"><span class="ms-num" id="msActive">0</span><span class="ms-lab">Detected</span></div>
+        <div class="card mini-stat"><span class="ms-num" id="msPending">0</span><span class="ms-lab">Awaiting Approval</span></div>
+        <div class="card mini-stat"><span class="ms-num" id="msResolved">0</span><span class="ms-lab">Runbook Issued</span></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="tbl"><thead><tr><th>Detected</th><th>ID</th><th>Severity</th><th>Subsystem</th><th>Summary</th><th>Status</th></tr></thead>
+          <tbody id="anoBody"></tbody></table>
+        </div>
+        <p class="empty-msg" id="anoEmpty">No anomalies detected — all systems nominal.</p>
+      </div>
+      <div class="card" id="approvalCard" style="display:none">
+        <div class="card-head"><h3>⚠ OPERATOR APPROVAL REQUIRED — <span id="apprAnoId"></span></h3></div>
+        <p class="appr-diag" id="apprDiag"></p>
+        <div id="apprOptions"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-workflow">
+      <div class="page-head"><h2>Autonomous Response Workflow</h2>
+        <span class="chip">Agents: Monitor · Diagnostics · Recovery · Digital&nbsp;Twin · Runbook</span>
+      </div>
+      <div class="card">
+        <div class="wf-track wf-lg" id="wfTrackFull"></div>
+        <div class="wf-bar">
+          <span class="wf-spark">✦</span>
+          <span><b>Current Stage:</b> <span id="wfMsgFull">Awaiting telemetry…</span></span>
+          <span class="wf-eta">ETA Next: <b id="wfEtaFull">--:--:--</b></span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>AGENT ACTIVITY</h3></div>
+        <div class="log-stream tall" id="agentLog"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-commands">
+      <div class="page-head"><h2>Command Console</h2>
+        <span class="chip"><span class="dot dot-green"></span>&nbsp;UPLINK · <span id="cmdLatency">—</span> ms RTT</span>
+      </div>
+      <div class="card term-card">
+        <div class="term" id="term"></div>
+        <div class="term-row"><span class="prompt">SAT-3A&gt;</span>
+          <input id="termInput" autocomplete="off" spellcheck="false" placeholder="Type 'help' for commands · ↑↓ history · Tab complete">
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>QUICK COMMANDS</h3></div>
+        <div class="quick-cmds" id="quickCmds"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-simulations">
+      <div class="page-head"><h2>Fault Injection Simulations</h2>
+        <span class="chip">Scenarios run through the live agent pipeline</span>
+      </div>
+      <div class="sim-grid" id="simGrid"></div>
+      <div class="card">
+        <div class="card-head"><h3>SIMULATION HISTORY</h3></div>
+        <div class="tbl-wrap">
+          <table class="tbl"><thead><tr><th>Time</th><th>Scenario</th><th>Subsystem</th><th>Severity</th><th>Outcome</th></tr></thead>
+          <tbody id="simHist"></tbody></table>
+        </div>
+        <p class="empty-msg" id="simEmpty">No simulations run yet.</p>
+      </div>
+    </section>
+
+    <section class="page" id="page-reports">
+      <div class="page-head"><h2>Runbooks &amp; Reports</h2>
+        <button class="btn sm" id="reportRefresh">↻ Refresh</button>
+      </div>
+      <div class="report-layout">
+        <div class="card report-list-card">
+          <div class="card-head"><h3>GENERATED RUNBOOKS</h3></div>
+          <div id="runbookList" data-scroll="runbook-list"><p class="empty-msg">No runbooks yet — they are generated automatically when the pipeline resolves an anomaly.</p></div>
+        </div>
+        <div class="card report-view-card" id="runbookView" style="display:none">
+          <div class="card-head"><h3 id="runbookTitle">—</h3>
+            <div class="row-gap"><span class="md-toggle"><button id="mdViewRendered" class="active">Rendered</button><button id="mdViewSource">Source</button></span><button class="btn sm" id="runbookDl">⬇ Download .md</button><button class="btn sm" id="runbookClose">✕ Close</button></div>
+          </div>
+          <pre class="mono-box tall" id="runbookBody" data-scroll="runbook"></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-memory">
+      <div class="page-head"><h2>Autonomous RAG Memory</h2>
+        <div class="row-gap">
+          <input class="input" id="memSearch" placeholder="Search historical incidents &amp; procedural knowledge…" style="width:280px">
+          <button class="btn sm" id="memRefresh">↻ Refresh Memory</button>
+        </div>
+      </div>
+      <div class="mem-stat-grid">
+        <div class="card mini-stat"><span class="ms-num" id="memTotalInc">0</span><span class="ms-lab">Episodic Incidents</span></div>
+        <div class="card mini-stat"><span class="ms-num" id="memRecovered">0</span><span class="ms-lab">Resolved &amp; Learned</span></div>
+        <div class="card mini-stat"><span class="ms-num" id="memProcedures">0</span><span class="ms-lab">Operational Procedures</span></div>
+        <div class="card mini-stat"><span class="ms-num" style="color:var(--green)">ONLINE</span><span class="ms-lab">TF-IDF Vector Index</span></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="row-gap">
+            <button class="btn sm" id="memTabInc" style="border-color:var(--accent)">Episodic Memory (Incidents)</button>
+            <button class="btn sm" id="memTabProc">Procedural Knowledge (Rules)</button>
+          </div>
+        </div>
+        <div id="memContent" class="mem-grid" style="margin-top:14px"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-audit">
+      <div class="page-head"><h2>Immutable Decision Audit Trail</h2>
+        <div class="row-gap">
+          <input class="input" id="auditSearch" placeholder="Filter by incident or action…" style="width:240px">
+          <button class="btn sm" id="auditRefresh">↻ Refresh</button>
+          <button class="btn sm" id="auditDl">⬇ Export Log</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Incident ID</th>
+                <th>Agent</th>
+                <th>Action</th>
+                <th>Criticality</th>
+                <th>AI Mode</th>
+                <th>Outcome / Decision</th>
+              </tr>
+            </thead>
+            <tbody id="auditBody"></tbody>
+          </table>
+        </div>
+        <p class="empty-msg" id="auditEmpty">No audit events recorded yet.</p>
+      </div>
+    </section>
+
+    <section class="page" id="page-settings">
+      <div class="page-head"><h2>Settings</h2></div>
+      <div class="card set-card">
+        <div class="set-row"><div><b>Accent color</b><p>Primary highlight color across the UI</p></div>
+          <div class="accents" id="accents">
+            <button class="acc" data-c="#25d6f5" style="background:#25d6f5"></button>
+            <button class="acc" data-c="#4ade80" style="background:#4ade80"></button>
+            <button class="acc" data-c="#a78bfa" style="background:#a78bfa"></button>
+            <button class="acc" data-c="#fb923c" style="background:#fb923c"></button>
+            <button class="acc" data-c="#f472b6" style="background:#f472b6"></button>
+          </div></div>
+        <div class="set-row"><div><b>Chart window</b><p>Number of samples shown in telemetry charts</p></div>
+          <select class="input sel" id="setWindow"><option value="30">30</option><option value="60" selected>60</option><option value="120">120</option></select></div>
+        <div class="set-row"><div><b>Sound on WARN / ERROR</b><p>Audible beep when warnings or errors are logged</p></div>
+          <label class="switch"><input type="checkbox" id="setSound"><span class="slider"></span></label></div>
+        <div class="set-row"><div><b>Satellite animation</b><p>Disable to reduce CPU / motion</p></div>
+          <label class="switch"><input type="checkbox" id="setAnim" checked><span class="slider"></span></label></div>
+        <div class="set-row"><div><b>Reset local data</b><p>Clears saved settings, notifications and sim history (server data unaffected)</p></div>
+          <button class="btn danger" id="setReset">Reset</button></div>
+      </div>
+      <div class="card set-card">
+        <div class="set-row"><div><b>Backend</b><p id="setBackendInfo">—</p></div><span class="tag" id="setConnTag">—</span></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer class="footer">VORTEX Satellite Ops Dashboard &nbsp;·&nbsp; Real-time Mission Monitoring &amp; Autonomous Response</footer>
+
+<div class="modal-back" id="logsModal">
+  <div class="modal">
+    <div class="modal-head"><h3>ALL LOGS (<span id="logsTotal">0</span>)</h3><button class="close-x" id="logsClose">✕</button></div>
+    <div class="row-gap pad">
+      <input class="input" id="logSearchM" placeholder="Search logs…">
+      <select class="input sel" id="logFilterM"><option value="">ALL</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
+      <button class="btn sm" id="logsDl">⬇ Download</button>
+    </div>
+    <div class="log-stream modal-logs" id="logStreamM"></div>
+  </div>
+</div>
+
+<div class="modal-back" id="injectModal">
+  <div class="modal narrow">
+    <div class="modal-head"><h3>INJECT ANOMALY SCENARIO</h3><button class="close-x" id="injectClose">✕</button></div>
+    <div class="inject-list" id="injectList"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="/static/vendor/satellite.min.js"></script>
+<script src="/static/vendor/three.min.js"></script>
+<script src="/static/vendor/globe.gl.min.js"></script>
+<script src="/static/md.js"></script>
+  <script src="/static/app.js"></script>
+<script src="/static/satmesh.js"></script>
+  <script src="/static/orbitmap.js"></script>
+<script src="/static/hero.js"></script>
+</body>
+</html>
