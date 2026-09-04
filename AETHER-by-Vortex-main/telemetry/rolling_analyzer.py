@@ -186,6 +186,9 @@ class RollingTelemetryAnalyzer:
     def __init__(self, window_seconds: float = ROLLING_WINDOW_SECONDS):
         self._window_seconds = window_seconds
         self._buffers: Dict[str, _ParameterBuffer] = {}
+        # Params currently latched as a confirmed, ongoing persistent anomaly.
+        # See the long comment in analyze() for why this exists.
+        self._latched: set = set()
 
     def _get_buffer(self, param: str) -> _ParameterBuffer:
         if param not in self._buffers:
@@ -228,6 +231,33 @@ class RollingTelemetryAnalyzer:
 
         violated_params = {v["param"] for v in violations}
 
+        # Latch handling: the z-score in ParameterStats is computed against
+        # THIS param's own rolling window -- which keeps ingesting the fault's
+        # readings every tick. For a fault that holds steady (rather than
+        # getting worse) past the initial ~PERSISTENCE_TICKS_THRESHOLD ticks,
+        # the window's own mean/std drift to re-center on the depressed
+        # value, so the z-score decays back toward 0 and status falls from
+        # PERSISTENT_ANOMALY back to TRANSIENT_SPIKE/NORMAL -- NOT because the
+        # fault cleared, but because the rolling baseline got contaminated by
+        # the fault it's supposed to be measuring against. Unpatched, this
+        # meant a real, still-out-of-band fault could silently stop being
+        # reported a few ticks after its first (correct) detection, and if
+        # the orchestrator's periodic check happened to land after that
+        # window closed, the fault was never escalated to the agent pipeline
+        # at all -- confirmed against a real battery_undervoltage trace.
+        #
+        # Fix: once a param first proves itself PERSISTENT_ANOMALY (still via
+        # the normal 3-consecutive-tick z-score gate -- pure noise still gets
+        # filtered exactly as before), latch it. While latched, a param stays
+        # classified as persistent for as long as it remains in `violations`
+        # (the actual, non-self-referential TELEMETRY_PARAMS warn-threshold
+        # breach) -- regardless of what the rolling z-score says. The latch
+        # only clears once the param is no longer in `violations`, i.e. it
+        # has genuinely returned within its warn band.
+        for param in list(self._latched):
+            if param not in violated_params:
+                self._latched.discard(param)
+
         for param in violated_params:
             stats = param_stats.get(param)
             if stats is None:
@@ -236,7 +266,11 @@ class RollingTelemetryAnalyzer:
 
             if stats.status == STATUS_EMERGENCY:
                 emergency_params.append(param)
+                self._latched.add(param)
             elif stats.status == STATUS_PERSISTENT_ANOMALY:
+                persistent_anomalies.append(param)
+                self._latched.add(param)
+            elif param in self._latched:
                 persistent_anomalies.append(param)
             elif stats.status == STATUS_TRANSIENT_SPIKE:
                 transient_spikes.append(param)

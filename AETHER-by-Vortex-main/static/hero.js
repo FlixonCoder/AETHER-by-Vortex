@@ -318,6 +318,20 @@
 
     window.addEventListener('resize', resize);
     window.addEventListener('mousemove', onMouse);
+    // window's resize event only fires when the BROWSER WINDOW itself
+    // changes size. camera.aspect/renderer.setSize are derived from the
+    // host container's own box, which can change for other reasons this
+    // never hears about (sidebar width changes, a notification/banner
+    // shifting layout, font loading reflow) -- any of those leaves the
+    // renderer's internal resolution and camera aspect stale relative to
+    // the container's new CSS size, and the sphere renders visibly
+    // stretched until something finally fires a real window resize (which
+    // is exactly what a page reload does, incidentally "fixing" it).
+    // ResizeObserver watches the container itself, not the window, so it
+    // catches all of those cases too.
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => resize()).observe(host);
+    }
     resize();
     animate();
   }

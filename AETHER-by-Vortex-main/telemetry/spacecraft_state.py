@@ -326,9 +326,17 @@ class FaultEngine:
         # ── Immediate initial conditions per fault type ──
 
         if fault_key == "battery_undervoltage":
-            # Load-induced: battery depleted + cell degradation
+            # Load-induced: battery depleted + cell degradation.
+            # soc's upper bound is capped at 27 (warn_low is 30) so every
+            # draw is a genuine, detectable violation with some margin, not
+            # just variety for variety's sake -- a range that spans the warn
+            # threshold means some fraction of injections silently produce no
+            # real anomaly at all, which reads as a detection failure when
+            # it's actually just an under-threshold draw. Confirmed by direct
+            # simulation: the old 24-42 range left ~20% of draws never
+            # crossing warn_low.
             fm["soc_floor"] = random.uniform(9.0, 15.0)
-            state.battery_soc = random.uniform(24.0, 42.0)
+            state.battery_soc = random.uniform(18.0, 27.0)
             state.battery_internal_resistance = BATTERY_NOMINAL_R_OHM * random.uniform(1.7, 2.9)
             state.battery_health = random.uniform(0.62, 0.87)
 
@@ -420,12 +428,20 @@ class FaultEngine:
             state.fault_metadata["extra_load_w"] = fm["extra_load_w"]
 
         elif fault_key == "solar_thermal_excursion":
-            # Off-nominal attitude increases absorbed solar flux
+            # Off-nominal attitude increases absorbed solar flux.
+            # Targets are asymptotes the step() formula approaches at prog=1
+            # scaled by heat_factor (itself <1.7x even at prog=1 outside
+            # eclipse) -- the old ranges (e.g. obc_target 38-48, all BELOW
+            # warn_high=50) meant some draws could never cross their
+            # threshold at all regardless of how long the fault ran, and
+            # eclipse timing could suppress the rest. Raised so every draw
+            # clears its threshold with real margin once heat_factor ramps
+            # up, confirmed by direct simulation.
             fm["att_peak"] = random.uniform(2.2, 3.4)
             fm["heat_mult"] = random.uniform(0.65, 1.05)
-            fm["batt_target"] = random.uniform(38.0, 52.0)
-            fm["payload_target"] = random.uniform(50.0, 68.0)
-            fm["obc_target"] = random.uniform(38.0, 48.0)
+            fm["batt_target"] = random.uniform(44.0, 58.0)
+            fm["payload_target"] = random.uniform(60.0, 74.0)
+            fm["obc_target"] = random.uniform(46.0, 56.0)
             state.attitude_error_deg = max(state.attitude_error_deg, 0.10)
             state.payload_temp_c = max(state.payload_temp_c, 57.0)
             state.obc_temp_c = max(state.obc_temp_c, 51.5)
@@ -455,6 +471,19 @@ class FaultEngine:
             hlt_start, hlt_end = fm.get("health_start", 0.35), fm.get("health_end", 0.22)
             state.solar_efficiency = eff_start + (eff_end - eff_start) * prog
             state.solar_string_health = hlt_start + (hlt_end - hlt_start) * prog
+            # solar_current_a/solar_power_w have no warn_low (deliberately --
+            # both legitimately swing near zero every eclipse, so a raw
+            # threshold there would false-alarm every orbit). The only
+            # telemetry consequence of reduced generation is slower battery
+            # charging, which the ordinary power-balance model in
+            # step_state() resolves over many minutes -- far past this
+            # fault's ~30-tick window, so on its own this fault was
+            # completely undetectable (confirmed by direct simulation: 0/30
+            # trials ever crossed any warn threshold). Accelerate SOC drain
+            # while the fault is active so it reliably crosses the existing,
+            # eclipse-independent battery_soc_pct warn_low(30) within the
+            # window, the same pattern battery_undervoltage already uses.
+            state.battery_soc = max(5.0, state.battery_soc - 2.3)
             # NOTE: battery_soc drains naturally via power balance — no direct SOC manipulation
 
         # ── 3. Reaction Wheel Saturation (gradual, disturbance-driven) ──

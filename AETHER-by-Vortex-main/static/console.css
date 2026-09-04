@@ -319,12 +319,22 @@ body.no-scroll-shell #page-orbitmap.active {
 /* Height chain: the stage can only fill the page if its ancestors have a
    resolved height. .page.active is display:block by default, so this is set
    explicitly rather than inherited. Measured with Barlow loaded: topbar
-   71.6px + footer 38.4px = 110px combined chrome height. */
-body.no-scroll-shell .layout {
+   71.6px + footer 38.4px = 110px combined chrome height.
+
+   Scoped to ONLY apply while Overview or Orbit Map is the active page --
+   same rule as the rest of this section (see the comment at the top: "the
+   other ten pages are dense card grids that were built to scroll"). This
+   was previously unscoped, which clamped .main's height and clipped its
+   overflow on EVERY page, not just these two -- silently cutting off and
+   disabling scroll on Telemetry, Anomalies, Audit Trail, RAG Memory, and
+   every other page that needs real page-length scrolling. */
+body.no-scroll-shell:has(#page-overview.active) .layout,
+body.no-scroll-shell:has(#page-orbitmap.active) .layout {
   height: calc(100vh - 110px);
   min-height: 0;
 }
-body.no-scroll-shell .main {
+body.no-scroll-shell:has(#page-overview.active) .main,
+body.no-scroll-shell:has(#page-orbitmap.active) .main {
   display: flex;
   flex-direction: column;
   min-height: 0;

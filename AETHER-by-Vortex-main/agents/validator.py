@@ -56,21 +56,42 @@ class SafetyValidator:
             if pred_state.get("battery_voltage_v", 28.0) < 23.5:
                 violations.append("Predicted bus voltage drops below 23.5V")
 
-        # 3b. Baseline Telemetry Check (whole-spacecraft side-effect gate)
-        # The above check only covers two hardcoded EPS params. The Baseline
-        # Checker stage covers every tracked parameter, including ones this
-        # candidate wasn't built to touch -- a fix that clears the original
-        # anomaly but knocks something else out of band fails HERE, not after
-        # it's already been executed.
-        if baseline_check is not None and not baseline_check.get("passed", True):
-            side_effects = baseline_check.get("side_effect_count", 0)
-            if side_effects > 0:
-                violations.append(
-                    f"Baseline check: candidate would push {side_effects} unrelated parameter(s) "
-                    f"out of band as a side effect ({baseline_check.get('reasoning', '')})"
-                )
-            else:
-                violations.append(f"Baseline check failed: {baseline_check.get('reasoning', 'telemetry baseline violated')}")
+        # 3b. Baseline Telemetry Check (whole-spacecraft SIDE-EFFECT gate)
+        # The Baseline Checker stage covers every tracked parameter, including
+        # ones this candidate wasn't built to touch -- a fix that clears the
+        # original anomaly but knocks something else out of band fails HERE,
+        # not after it's already been executed.
+        #
+        # Deliberately narrowed to side effects only (params NOT in the
+        # anomaly's own affected_params). The single-step rule-engine
+        # simulator (rule_engine.simulate) is an additive-delta model: a
+        # command's predicted_state only moves the params it has an explicit
+        # delta for, and echoes every other param at its CURRENT value. Most
+        # recovery commands here (LOAD_SHED_NON_ESSENTIAL, SAFE_MODE_ENTER...)
+        # only touch load/attenuation directly and let the anomaly's own
+        # parameter (battery SOC, temperature...) recover naturally over
+        # subsequent ticks via ordinary physics -- so predicted_state ALWAYS
+        # still shows that parameter violating, on every legitimate candidate,
+        # forever. Hard-blocking on that made every gradually-recovering fault
+        # permanently unexecutable: rejected pre-approval, and rejected again
+        # after human approval since re-validation reused the same baseline
+        # result (an operator could approve it as many times as they liked
+        # and nothing would ever be sent to the spacecraft). Verifying that
+        # THIS parameter actually comes back is Post-Monitor's job, over its
+        # settle-and-retry window against real elapsed ticks -- not this
+        # stage's, which only ever sees one instantaneous snapshot.
+        if baseline_check is not None and baseline_check.get("side_effect_count", 0) > 0:
+            side_effects = baseline_check["side_effect_count"]
+            violations.append(
+                f"Baseline check: candidate would push {side_effects} unrelated parameter(s) "
+                f"out of band as a side effect ({baseline_check.get('reasoning', '')})"
+            )
+        elif baseline_check is not None and not baseline_check.get("passed", True):
+            checks_passed.append(
+                f"Baseline check: no side effects on unrelated parameters "
+                f"({baseline_check.get('violation_count', 0)} of the anomaly's own affected parameter(s) "
+                f"not yet reflected in the single-step prediction — Post-Monitor verifies actual recovery)"
+            )
         elif baseline_check is not None:
             checks_passed.append(f"Baseline check: all {baseline_check.get('checked_count', 0)} tracked parameters within band")
 

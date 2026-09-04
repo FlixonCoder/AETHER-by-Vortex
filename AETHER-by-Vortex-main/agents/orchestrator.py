@@ -353,31 +353,62 @@ class MissionOrchestrator:
             self._record_stage(inc_id, "SIMULATOR", s, attempt)
         await self._broadcast({"type": "simulation_complete", "timestamp": _now(), "data": {"incident_id": inc_id, "simulations": simulations}})
 
-        # Pick best simulation candidate that passed constraints
-        chosen_candidate = candidates[0]
-        chosen_sim = simulations[0]
-        for c, s in zip(candidates, simulations):
-            if s.get("safe", False) and s.get("risk_score", 100) <= chosen_sim.get("risk_score", 100):
-                chosen_candidate = c
-                chosen_sim = s
-                break
+        # Rank candidates: simulator-safe ones first (lowest risk_score first
+        # among those), unsafe ones last. This only reorders -- nothing here
+        # decides pass/fail, so it can't loosen the safety gate downstream.
+        ranked = sorted(
+            zip(candidates, simulations),
+            key=lambda cs: (0 if cs[1].get("safe", False) else 1, cs[1].get("risk_score", 100)),
+        )
 
         # -------------------------------------------------------------
         # Step 3b: Baseline Telemetry Check
         # -------------------------------------------------------------
         # Runs after simulation, before the Safety Gate. The Simulator only
-        # verifies the chosen candidate resolves ITS OWN anomaly; this stage
-        # checks the same predicted post-fix state against every OTHER
-        # tracked parameter too, so a fix that's locally safe but breaks
-        # something unrelated gets caught here instead of after execution.
+        # verifies a candidate resolves ITS OWN anomaly; this stage checks
+        # the same predicted post-fix state against every OTHER tracked
+        # parameter too, so a fix that's locally safe but breaks something
+        # unrelated gets caught here instead of after execution.
+        #
+        # Try candidates in ranked order and stop at the first one that's
+        # also baseline-clean, instead of only ever checking the single
+        # top-ranked candidate. A subsystem's candidate list often has more
+        # than one legitimate fix (e.g. battery_undervoltage offers both a
+        # plain load-shed and an MPPT recalibration) -- if the top-ranked one
+        # happens to have a real side effect (confirmed live: MPPT
+        # recalibration pushing solar_current_a past its ceiling) while a
+        # perfectly good alternative sits right there in the same list, the
+        # incident should fall through to that alternative, not stall out
+        # asking for oversight on a problem that has an easy fix sitting
+        # unused. Only if EVERY candidate fails baseline does this keep the
+        # original (best-ranked) choice and let it flow into Safety Gate for
+        # human review, exactly as before.
         self._log_activity("BASELINE_CHECK", "Verifying predicted post-fix state against full telemetry baseline...", "info")
         await self._broadcast({"type": "agent_activity", "timestamp": _now(), "data": {"agent": "BASELINE_CHECK", "incident_id": inc_id, "status": "running", "message": "Checking every tracked parameter, not just the anomaly's own..."}})
 
+        chosen_candidate, chosen_sim = ranked[0]
         baseline = self.baseline_checker.check(
             predicted_state=chosen_sim.get("predicted_state", {}),
             current_telemetry=snap.values,
             anomaly_params=anomaly.get("affected_params", []),
         )
+        if not baseline["passed"] and len(ranked) > 1:
+            for alt_candidate, alt_sim in ranked[1:]:
+                alt_baseline = self.baseline_checker.check(
+                    predicted_state=alt_sim.get("predicted_state", {}),
+                    current_telemetry=snap.values,
+                    anomaly_params=anomaly.get("affected_params", []),
+                )
+                if alt_baseline["passed"]:
+                    self._log_activity(
+                        "BASELINE_CHECK",
+                        f"'{chosen_candidate.get('name')}' failed baseline ({baseline['reasoning']}) — "
+                        f"falling back to '{alt_candidate.get('name')}', which passes.",
+                        "info"
+                    )
+                    chosen_candidate, chosen_sim, baseline = alt_candidate, alt_sim, alt_baseline
+                    break
+
         self._record_stage(inc_id, "BASELINE_CHECK", baseline, attempt)
         self._log_activity(
             "BASELINE_CHECK",
@@ -565,10 +596,21 @@ class MissionOrchestrator:
         return True
 
     async def _run_verify_job(self, subsys: Optional[str], *args):
+        """Same in-flight discipline as _run_pipeline_job (see its docstring):
+        _execute_and_verify's own retry loop can land the incident back in
+        pending_approvals (e.g. attempt #2 also needs oversight) rather than
+        reaching a terminal state. Releasing the subsystem unconditionally
+        here -- as this used to -- let the watcher re-detect the same still-
+        unresolved fault as a brand new incident while the first one was
+        still sitting in the approval queue, confirmed live: a single hard-
+        to-clear battery_undervoltage produced three simultaneous pending
+        approvals (041812, 041813, 041814) for what was one physical fault.
+        """
+        inc_id = args[0] if args else None
         try:
             await self._execute_and_verify(*args)
         finally:
-            if subsys:
+            if subsys and inc_id not in self.pending_approvals:
                 self.subsystems_in_flight.discard(subsys)
 
     async def reject_procedure(self, anomaly_id: str, reason: str = "Operator rejected proposed action") -> bool:
