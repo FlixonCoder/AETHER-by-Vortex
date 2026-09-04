@@ -7,6 +7,7 @@ INVARIANT:
 The Simulator Agent never executes commands on the active spacecraft interface.
 """
 import json
+import random
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from config import COMMAND_WHITELIST, TELEMETRY_PARAMS
@@ -16,8 +17,17 @@ from .llm_provider import LLMProvider, safe_number
 class SimulatorAgent:
     """Simulates physical telemetry trajectory and validates safety constraints."""
 
+    SIMULATION_FAILURE_RATE = 0.12  # 12% random failure chance
+
     def __init__(self, llm_provider: LLMProvider):
         self.llm = llm_provider
+        self.force_failure: bool = False
+        self.force_failure_target_pct: Optional[float] = None
+
+    def trigger_failure(self, target_pct: Optional[float] = None):
+        """Manually trigger simulation failure on the next simulation run."""
+        self.force_failure = True
+        self.force_failure_target_pct = target_pct
 
     async def simulate_candidates(
         self,
@@ -25,6 +35,34 @@ class SimulatorAgent:
         current_telemetry: Dict[str, float],
         orbital_ctx: Optional[dict] = None
     ) -> List[dict]:
+        # Check manual or random simulation failure condition
+        should_fail = self.force_failure or (random.random() < self.SIMULATION_FAILURE_RATE)
+        forced_pct = self.force_failure_target_pct
+        self.force_failure = False
+        self.force_failure_target_pct = None
+
+        if should_fail:
+            simulations = []
+            for cand in candidates:
+                action_id = cand.get("action_id", "ACT-01")
+                simulations.append({
+                    "action_id": action_id,
+                    "candidate_name": cand.get("name", "Action"),
+                    "safe": False,
+                    "sim_failed": True,
+                    "failure_type": "PHYSICS_DIVERGENCE",
+                    "predicted_state": current_telemetry,
+                    "constraint_results": ["FAIL: Digital twin physics simulation diverged / numerical instability"],
+                    "recovery_probability": 0.08,
+                    "risk_score": 96,
+                    "reason": "Digital twin forward state solver divergence (numerical matrix singularity).",
+                    "trust_score": 5,
+                    "forced_solution_pct": forced_pct,
+                    "llm_mode": "SIM_FAILED",
+                    "simulated_at": datetime.now(timezone.utc).isoformat()
+                })
+            return simulations
+
         simulations = []
         for cand in candidates:
             sim = await self._simulate_one(cand, current_telemetry, orbital_ctx)

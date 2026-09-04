@@ -216,13 +216,13 @@
 
   function buildOrbitRing(radius, accent) {
     const pts = [];
-    for (let i = 0; i <= 128; i++) {
-      const a = (i / 128) * Math.PI * 2;
+    for (let i = 0; i <= 180; i++) {
+      const a = (i / 180) * Math.PI * 2;
       pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
     }
     return new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0.22 })
+      new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0.48 })
     );
   }
 
@@ -310,30 +310,89 @@
 
     const accent = SEVERITY_COLOR.NOMINAL;
     orbitRing = buildOrbitRing(ORBIT_R, accent);
-    orbitRing.rotation.x = ORBIT_TILT;
+    // Lift orbit path so the front trajectory sweeps centered and visibly across the globe
+    orbitRing.rotation.x = -ORBIT_TILT;
+    orbitRing.rotation.y = 0.25;
     scene.add(orbitRing);
 
     satellite = buildSatellite(accent);
     scene.add(satellite);
 
+    // Interactive camera rotation controls (drag to rotate from any angle, like Orbit Map)
+    initOrbitControls();
+
     window.addEventListener('resize', resize);
-    window.addEventListener('mousemove', onMouse);
-    // window's resize event only fires when the BROWSER WINDOW itself
-    // changes size. camera.aspect/renderer.setSize are derived from the
-    // host container's own box, which can change for other reasons this
-    // never hears about (sidebar width changes, a notification/banner
-    // shifting layout, font loading reflow) -- any of those leaves the
-    // renderer's internal resolution and camera aspect stale relative to
-    // the container's new CSS size, and the sphere renders visibly
-    // stretched until something finally fires a real window resize (which
-    // is exactly what a page reload does, incidentally "fixing" it).
-    // ResizeObserver watches the container itself, not the window, so it
-    // catches all of those cases too.
     if (window.ResizeObserver) {
       new ResizeObserver(() => resize()).observe(host);
     }
     resize();
     animate();
+  }
+
+  /* ------------------------------------------------ interactive controls */
+  let isDragging = false;
+  let prevPointerX = 0;
+  let prevPointerY = 0;
+  let camTheta = 0;                  // azimuth angle
+  let camPhi = Math.PI / 2.3;        // polar angle (elevation)
+  let camRadius = 3.1;               // distance from earth
+  let targetTheta = 0;
+  let targetPhi = Math.PI / 2.3;
+  let targetRadius = 3.1;
+  const MIN_RADIUS = 1.8;
+  const MAX_RADIUS = 5.2;
+
+  function initOrbitControls() {
+    if (!host) return;
+
+    host.style.cursor = 'grab';
+
+    host.addEventListener('pointerdown', (e) => {
+      // Ignore clicks on floating panels or controls
+      if (e.target.closest && e.target.closest('.ov-float, .card, button, a')) return;
+      isDragging = true;
+      prevPointerX = e.clientX;
+      prevPointerY = e.clientY;
+      host.style.cursor = 'grabbing';
+      if (host.setPointerCapture) {
+        try { host.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (isDragging) {
+        const deltaX = e.clientX - prevPointerX;
+        const deltaY = e.clientY - prevPointerY;
+        prevPointerX = e.clientX;
+        prevPointerY = e.clientY;
+
+        targetTheta -= deltaX * 0.007;
+        targetPhi -= deltaY * 0.007;
+        // Clamp phi to avoid flipping at poles
+        targetPhi = Math.max(0.12, Math.min(Math.PI - 0.12, targetPhi));
+      } else {
+        onMouse(e);
+      }
+    });
+
+    const stopDrag = (e) => {
+      if (isDragging) {
+        isDragging = false;
+        if (host) host.style.cursor = 'grab';
+        if (host && host.releasePointerCapture && e.pointerId != null) {
+          try { host.releasePointerCapture(e.pointerId); } catch (_) {}
+        }
+      }
+    };
+
+    window.addEventListener('pointerup', stopDrag);
+    window.addEventListener('pointercancel', stopDrag);
+
+    host.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      targetRadius += e.deltaY * 0.003;
+      targetRadius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, targetRadius));
+    }, { passive: false });
   }
 
   function resize() {
@@ -355,6 +414,7 @@
   }
 
   function handleRaycast() {
+    if (isDragging) return;
     raycaster.setFromCamera(pointerPos, camera);
     const hits = raycaster.intersectObjects([wire], false);
     if (hits.length > 0 && hits[0].uv) globeUV.copy(hits[0].uv);
@@ -371,21 +431,39 @@
     if (page && !page.classList.contains('active')) return;
     if (document.hidden) return;
 
+    // Realistic rotational speeds:
+    // Earth completes 1 rotation every 24h; LEO satellite completes 1 orbit every ~92min (~15.6:1 ratio).
+    // Slower, smooth and majestic speeds:
+    const EARTH_SPEED = 0.00016;
+    const SAT_SPEED = EARTH_SPEED * 15.6; // ~0.0025
+
     if (!reduceMotion) {
-      globeGroup.rotation.y += 0.002;
-      orbitAngle += 0.0042;
+      globeGroup.rotation.y += EARTH_SPEED;
+      orbitAngle += SAT_SPEED;
     }
 
-    // Satellite rides the visible orbit track: same radius, same tilt.
-    const x = Math.cos(orbitAngle) * ORBIT_R;
-    const z = Math.sin(orbitAngle) * ORBIT_R;
-    satellite.position.set(
-      x,
-      -z * Math.sin(ORBIT_TILT),
-      z * Math.cos(ORBIT_TILT)
+    // Smooth camera damping for interactive rotation
+    camTheta += (targetTheta - camTheta) * 0.08;
+    camPhi += (targetPhi - camPhi) * 0.08;
+    camRadius += (targetRadius - camRadius) * 0.08;
+
+    camera.position.set(
+      camRadius * Math.sin(camPhi) * Math.sin(camTheta),
+      camRadius * Math.cos(camPhi),
+      camRadius * Math.sin(camPhi) * Math.cos(camTheta)
     );
+    camera.lookAt(0, 0, 0);
+
+    // Satellite rides the lifted, centered visible orbit track:
+    // Transform through the orbit ring's euler rotation (-ORBIT_TILT on X, 0.25 on Y)
+    const rawX = Math.cos(orbitAngle) * ORBIT_R;
+    const rawZ = Math.sin(orbitAngle) * ORBIT_R;
+    const satPos = new THREE.Vector3(rawX, 0, rawZ);
+    satPos.applyEuler(new THREE.Euler(-ORBIT_TILT, 0.25, 0));
+
+    satellite.position.copy(satPos);
     satellite.lookAt(0, 0, 0);
-    satellite.rotateX(Math.PI / 2);   // point the dish at nadir
+    satellite.rotateX(Math.PI / 2);   // point dish at nadir
 
     handleRaycast();
     renderer.render(scene, camera);

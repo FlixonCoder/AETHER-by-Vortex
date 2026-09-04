@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VORTEX — Satellite Ops Dashboard</title>
+<title>AETHER by VORTEX — Satellite Ops Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/styles.css">
 <link rel="stylesheet" href="/static/orbitmap.css">
   <link rel="stylesheet" href="/static/console.css">
@@ -59,8 +60,8 @@
     <div class="chip"><span class="ico">🕒</span><span id="topClock">—</span></div>
   </div>
   <div class="topbar-center">
-    <div class="brand">VORTEX</div>
-    <div class="brand-sub">SATELLITE OPS DASHBOARD</div>
+    <div class="brand">AETHER</div>
+    <div class="brand-sub">by VORTEX</div>
   </div>
   <div class="topbar-right">
     <div class="chip ai-chip" id="aiModeChip" title="Active AI Tier (Ollama -> Groq -> Rule Engine)"><span class="dot dot-cyan" id="aiModeDot"></span><span id="aiModeText">AI: CONNECTING…</span></div>
@@ -73,6 +74,26 @@
 <div class="notif-panel" id="notifPanel">
   <div class="notif-head"><span>NOTIFICATIONS</span><button class="link-btn" id="notifClear">Clear all</button></div>
   <div class="notif-list" id="notifList" data-scroll="notifications"><div class="empty-msg">No notifications</div></div>
+</div>
+
+<!-- Global Approval Toast — shown on ANY page when pipeline needs human input -->
+<div id="approvalToast" style="display:none">
+  <div class="appr-toast-inner">
+    <div class="appr-toast-head">
+      <span class="appr-toast-icon">⚠️</span>
+      <div>
+        <div class="appr-toast-title">ACTION REQUIRED</div>
+        <div class="appr-toast-sub" id="apprToastSub">Anomaly pipeline awaiting operator decision</div>
+      </div>
+      <button class="appr-toast-close" id="apprToastClose" title="Dismiss (approval still pending)">✕</button>
+    </div>
+    <div class="appr-toast-body" id="apprToastBody"></div>
+    <div class="appr-toast-actions">
+      <button class="btn" id="apprToastApprove">✓ Approve</button>
+      <button class="btn danger" id="apprToastReject">✕ Reject</button>
+      <button class="link-btn" id="apprToastGoto">View full details →</button>
+    </div>
+  </div>
 </div>
 
 <div class="layout">
@@ -99,19 +120,14 @@
                a fallback and is hidden once the 3D stage is running. -->
           <div id="heroStage"></div>
           <canvas id="spaceCanvas"></canvas>
-          <div class="visual-side">
-            <button class="vc-btn active" id="vcOrbit" title="Toggle orbit path"><svg class="ico"><use href="#i-orbit"/></svg></button>
-            <button class="vc-btn" id="vcGrid" title="Toggle grid"><svg class="ico"><use href="#i-compass"/></svg></button>
-            <button class="vc-btn active" id="vc3d" title="Toggle animation">3D</button>
-          </div>
           <div class="visual-foot"><span id="visInfo">TICK — · PHASE —%</span></div>
         </div>
 
-        <div class="card ov-float" id="satStatusCard">
+        <div class="card ov-float minimised" id="satStatusCard">
           <div class="card-head">
             <h3>Satellite Status</h3>
             <span class="tag tag-green" id="satTag">NOMINAL</span>
-            <button class="ov-min" id="satStatusMin" title="Minimise" aria-expanded="true">−</button>
+            <button class="ov-min" id="satStatusMin" title="Expand" aria-expanded="false">+</button>
           </div>
           <ul class="stat-list">
             <li><svg class="s-ico"><use href="#i-orbit"/></svg><span class="s-lab">Orbit</span><span class="s-val">LEO</span></li>
@@ -129,8 +145,8 @@
           </ul>
         </div>
 
-        <div class="card ov-float" id="wfCard">
-          <div class="card-head"><h3>Workflow Progress</h3><span class="tag" id="wfModeTag">MONITORING</span></div>
+        <div class="card ov-float minimised" id="wfCard">
+          <div class="card-head"><h3>Workflow Progress</h3><span class="tag" id="wfModeTag">MONITORING</span><button class="ov-min" id="wfMin" title="Expand" aria-expanded="false">+</button></div>
           <div class="wf-track" id="wfTrackOv"></div>
           <div class="wf-bar">
             <span class="wf-spark">✦</span>
@@ -277,6 +293,7 @@
       <div class="page-head"><h2>Anomalies</h2>
         <div class="row-gap">
           <select class="input sel" id="anoFilter"><option value="">All severities</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>
+          <button class="btn sm" id="btnSimFailToggle" title="Force simulation failure on next anomaly to test Rule-Based Fallback">⚠️ Force Sim Failure</button>
           <button class="btn sm danger" id="anoInjectBtn">⚡ Inject Anomaly</button>
         </div>
       </div>

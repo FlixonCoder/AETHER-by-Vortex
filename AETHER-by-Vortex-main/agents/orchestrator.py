@@ -15,6 +15,7 @@ from config import (
     ANOMALY_CHECK_EVERY_N_TICKS,
     ANOMALY_SCENARIOS,
     MAX_RECOVERY_ATTEMPTS,
+    RUNBOOK_DIR,
     TELEMETRY_INTERVAL_S,
 )
 from telemetry.simulator import SatelliteSimulator
@@ -72,6 +73,16 @@ class MissionOrchestrator:
         self.pending_approvals: Dict[str, Dict] = {}
         self.activity_log: List[Dict] = []
         self.runbooks: List[Dict] = []
+        if RUNBOOK_DIR.exists():
+            for p in sorted(RUNBOOK_DIR.glob("runbook_*.md"), reverse=True):
+                parts = p.stem.split("_")
+                ano_id = parts[1] if len(parts) > 1 else "ANO-ARCHIVED"
+                mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+                self.runbooks.append({
+                    "filename": p.name,
+                    "anomaly_id": ano_id,
+                    "generated_at": mtime
+                })
         self.retry_counts: Dict[str, int] = {}
         # Trust/reasoning trail — one entry per agent stage per incident,
         # collected across every retry attempt. Averaged into a single
@@ -92,6 +103,10 @@ class MissionOrchestrator:
         self.pipeline_queue: "asyncio.Queue[tuple[str, Callable[[], Any]]]" = asyncio.Queue()
         self.current_incident_id: Optional[str] = None
         self.subsystems_in_flight: Set[str] = set()
+
+        # Simulation failure condition flag (manual trigger or random fallback)
+        self.force_sim_failure: bool = False
+        self.force_sim_solution_pct: Optional[float] = None
 
         self.running = False
         self.tick = 0
@@ -352,6 +367,147 @@ class MissionOrchestrator:
         for s in simulations:
             self._record_stage(inc_id, "SIMULATOR", s, attempt)
         await self._broadcast({"type": "simulation_complete", "timestamp": _now(), "data": {"incident_id": inc_id, "simulations": simulations}})
+
+        # -------------------------------------------------------------
+        # Step 3a: Simulation Failure Fallback to Rule-Based System
+        # Triggered randomly or manually when simulation fails / diverged.
+        # If rule-based solution % > 60: proceed without approval; else ask user.
+        # -------------------------------------------------------------
+        sim_failed = any(s.get("sim_failed", False) for s in simulations) or self.force_sim_failure
+        forced_pct = self.force_sim_solution_pct
+        if self.force_sim_failure:
+            self.force_sim_failure = False
+            self.force_sim_solution_pct = None
+            sim_failed = True
+
+        if sim_failed:
+            self._log_activity(
+                "SIMULATOR",
+                "Digital twin physics simulation failed / diverged! Falling back to deterministic Rule-Based System...",
+                "warning"
+            )
+            await self._broadcast({
+                "type": "sim_failure_fallback",
+                "timestamp": _now(),
+                "data": {
+                    "incident_id": inc_id,
+                    "message": "Simulation diverged; engaged rule-based recovery engine."
+                }
+            })
+
+            rule_evals = []
+            for cand in candidates:
+                r_sim = self.llm_provider.rule_engine.simulate(cand, snap.values)
+                base_prob = cand.get("estimated_recovery_probability", r_sim.get("recovery_probability", 0.90))
+                if not r_sim.get("safe", False):
+                    sol_pct = 28.0
+                elif forced_pct is not None:
+                    sol_pct = float(forced_pct)
+                else:
+                    crit_score = anomaly.get("criticality_score", 50)
+                    if crit_score >= 85:
+                        # High criticality degrades rule-based confidence into 42-56% (<=60%)
+                        sol_pct = round(max(35.0, min(56.0, base_prob * 100.0 - (crit_score - 40) * 0.7)), 1)
+                    else:
+                        # Moderate conditions yield high rule-based confidence (68-94%) (>60%)
+                        sol_pct = round(max(66.0, min(95.0, base_prob * 100.0 - (crit_score - 30) * 0.2)), 1)
+
+                rule_evals.append({
+                    "candidate": cand,
+                    "rule_sim": r_sim,
+                    "solution_pct": sol_pct,
+                    "safe": r_sim.get("safe", False)
+                })
+
+            rule_evals.sort(key=lambda x: (1 if x["safe"] else 0, x["solution_pct"]), reverse=True)
+            best_eval = rule_evals[0]
+            chosen_candidate = best_eval["candidate"]
+            chosen_sim = best_eval["rule_sim"]
+            best_sol_pct = best_eval["solution_pct"]
+
+            if best_sol_pct > 60.0:
+                self._log_activity(
+                    "RULE_ENGINE",
+                    f"Rule-based solution '{chosen_candidate.get('name')}' confidence is {best_sol_pct}% (>60%) — Auto-approving execution without operator pause.",
+                    "success"
+                )
+                validation = {
+                    "approved_for_execution": True,
+                    "requires_human_approval": False,
+                    "decision": "RULE_BASED_AUTO_APPROVED",
+                    "reason": f"Simulation failed; rule-based fallback solution cleared with {best_sol_pct}% confidence (> 60% threshold).",
+                    "fallback_mode": "RULE_BASED",
+                    "solution_pct": best_sol_pct
+                }
+                self._record_stage(inc_id, "VALIDATOR", validation, attempt)
+                self.audit_logger.log(
+                    incident_id=inc_id,
+                    agent="RULE_ENGINE",
+                    action="RULE_BASED_FALLBACK_AUTO_APPROVED",
+                    input_data={"candidate": chosen_candidate, "solution_pct": best_sol_pct},
+                    output_data=validation,
+                    criticality=criticality_ctx
+                )
+                await self._broadcast({"type": "validation_decision", "timestamp": _now(), "data": {"incident_id": inc_id, "validation": validation}})
+                await self._execute_and_verify(inc_id, anomaly, diagnosis, chosen_candidate, chosen_sim, validation, attempt)
+                return
+            else:
+                self._log_activity(
+                    "RULE_ENGINE",
+                    f"Rule-based solution '{chosen_candidate.get('name')}' confidence is {best_sol_pct}% (<=60%) — Operator approval required.",
+                    "warning"
+                )
+                validation = {
+                    "approved_for_execution": False,
+                    "requires_human_approval": True,
+                    "decision": "AWAITING_HUMAN_APPROVAL",
+                    "reason": f"Simulation failed; rule-based solution confidence is {best_sol_pct}% (<= 60% threshold). Operator approval required.",
+                    "fallback_mode": "RULE_BASED",
+                    "solution_pct": best_sol_pct
+                }
+                self._record_stage(inc_id, "VALIDATOR", validation, attempt)
+                self.audit_logger.log(
+                    incident_id=inc_id,
+                    agent="RULE_ENGINE",
+                    action="RULE_BASED_FALLBACK_APPROVAL_REQUIRED",
+                    input_data={"candidate": chosen_candidate, "solution_pct": best_sol_pct},
+                    output_data=validation,
+                    criticality=criticality_ctx
+                )
+                self.pending_approvals[inc_id] = {
+                    "incident_id": inc_id,
+                    "anomaly": anomaly,
+                    "diagnosis": diagnosis,
+                    "candidate": chosen_candidate,
+                    "simulation": chosen_sim,
+                    "validation": validation,
+                    "candidates": candidates,
+                    "simulations": simulations,
+                    "fallback_mode": "RULE_BASED",
+                    "solution_pct": best_sol_pct,
+                    "attempt": attempt,
+                    "requested_at": _now()
+                }
+                await self._broadcast({
+                    "type": "approval_required",
+                    "timestamp": _now(),
+                    "data": {
+                        "incident_id": inc_id,
+                        "anomaly_id": inc_id,
+                        "severity": anomaly["severity"],
+                        "criticality_score": anomaly["criticality_score"],
+                        "policy": "OPERATOR_APPROVAL_REQUIRED",
+                        "diagnosis": diagnosis,
+                        "candidate": chosen_candidate,
+                        "simulation": chosen_sim,
+                        "candidates": candidates,
+                        "simulations": simulations,
+                        "fallback_mode": "RULE_BASED",
+                        "solution_pct": best_sol_pct,
+                        "reason": f"Simulation failed → Rule-based solution confidence {best_sol_pct}% (≤ 60% threshold)"
+                    }
+                })
+                return
 
         # Rank candidates: simulator-safe ones first (lowest risk_score first
         # among those), unsafe ones last. This only reorders -- nothing here

@@ -45,10 +45,13 @@
 @keyframes valSwap { from { opacity: 0.35; } to { opacity: 1; } }
 
 /* --------------------------------------------------- 3. non-scroll shell */
-/* Scoped deliberately. The other ten pages are dense card grids that were
-   built to scroll; clamping them globally would clip content rather than fit
-   it. Overview and Orbit Map are the demo path and are made to fit. */
-body.no-scroll-shell { overflow: hidden; }
+/* Scoped to Overview and Orbit Map ONLY using :has(). The other pages are
+   dense card grids built to scroll; the old global body overflow:hidden
+   silently clipped them. Now we gate on which page is active. */
+body.no-scroll-shell:has(#page-overview.active),
+body.no-scroll-shell:has(#page-orbitmap.active) {
+  overflow: hidden;
+}
 
 body.no-scroll-shell #page-overview.active,
 body.no-scroll-shell #page-orbitmap.active {
@@ -70,9 +73,13 @@ body.no-scroll-shell #page-orbitmap.active {
 /* Below this width the fixed layout cannot hold. Say so instead of degrading. */
 .narrow-warning { display: none; }
 @media (max-width: 1100px) {
-  body.no-scroll-shell .layout,
-  body.no-scroll-shell .topbar { display: none !important; }
-  .narrow-warning {
+  /* Only hide layout when the non-scrolling pages are active */
+  body.no-scroll-shell:has(#page-overview.active) .layout,
+  body.no-scroll-shell:has(#page-overview.active) .topbar,
+  body.no-scroll-shell:has(#page-orbitmap.active) .layout,
+  body.no-scroll-shell:has(#page-orbitmap.active) .topbar { display: none !important; }
+  body.no-scroll-shell:has(#page-overview.active) .narrow-warning,
+  body.no-scroll-shell:has(#page-orbitmap.active) .narrow-warning {
     display: flex; align-items: center; justify-content: center;
     position: fixed; inset: 0; padding: 24px;
     font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase;
@@ -226,34 +233,29 @@ body.no-scroll-shell #page-orbitmap.active {
 .ov-earth #heroStage { position: absolute; inset: 0; }
 .ov-earth #heroStage canvas { display: block; width: 100% !important; height: 100% !important; }
 
-/* Floating panels — HUD readout frames, not glass cards. A single top
-   hairline plus two corner brackets (a targeting-reticle convention lifted
-   straight from the console's own subject matter) replace the all-around
-   border + drop shadow "floating island" look. The blur is light — just
-   enough to keep text legible over the moving globe, not a decorative
-   frosted-glass slab. */
+/* Floating panels — compact glassmorphic HUD frames. Corner accent brackets
+   give a tactical / mission control feel. Kept light so the earth globe
+   remains the visual star — panels are context, not centerpiece. */
 .ov-float {
   position: absolute;
   z-index: 3;
-  /* Raised from 0.72/0.55 -- at the old opacity the animated scene behind
-     (in particular the gold satellite passing through) showed through busy
-     foreground content (icon circles, workflow step labels) badly enough to
-     read as visual noise/overlap rather than an intentional see-through
-     panel. Still translucent, just no longer fighting for legibility. */
-  background: linear-gradient(180deg, rgba(13, 18, 28, 0.93), rgba(9, 13, 22, 0.90)) !important;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* Lighter background so earth shows through more prominently.
+     60-70% opacity instead of 90%+ — the earth is the main visual. */
+  background: linear-gradient(160deg, rgba(8, 12, 22, 0.72), rgba(6, 10, 18, 0.65)) !important;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
   border: none !important;
-  border-top: 1px solid var(--hairline-hot) !important;
-  padding-top: 14px !important;
+  border-top: 1px solid rgba(37, 214, 245, 0.25) !important;
+  padding-top: 12px !important;
+  border-radius: 0 0 var(--radius) var(--radius) !important;
 }
 .ov-float::before, .ov-float::after {
   content: '';
   position: absolute;
   top: -1px;
-  width: 11px; height: 11px;
+  width: 10px; height: 10px;
   border-top: 1.5px solid var(--accent);
-  opacity: .75;
+  opacity: 0.6;
   pointer-events: none;
 }
 .ov-float::before { left: -1px; border-left: 1.5px solid var(--accent); }
@@ -261,27 +263,29 @@ body.no-scroll-shell #page-orbitmap.active {
 
 .ov-float .card-head h3 {
   font-family: var(--font-label);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: .05em;
-  color: var(--ink-1);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(233, 237, 243, 0.75);
 }
 
+/* Satellite Status: left-side compact panel — narrow so earth stays visible */
 #satStatusCard {
-  top: 16px; left: 16px;
-  width: 292px;
-  max-height: calc(100% - 32px);
+  top: 14px; left: 14px;
+  width: 240px;
+  max-height: calc(60% - 14px);
   display: flex; flex-direction: column;
 }
 #satStatusCard .stat-list { overflow-y: auto; min-height: 0; }
+#satStatusCard .stat-list li { padding: 6px 2px; font-size: 12px; }
 
+/* Workflow card: bottom strip — full width minus margins */
 #wfCard {
-  left: 16px; right: 16px; bottom: 16px;
+  left: 14px; right: 14px; bottom: 14px;
 }
 
-/* Minimise: collapse to just the header row. A plain chevron rather than a
-   bordered box button — one less rounded-rect on a panel that is already
-   trying not to look like a stack of rounded rectangles. */
+/* Minimise toggle */
 .ov-min {
   margin-left: auto;
   background: none;
@@ -293,11 +297,16 @@ body.no-scroll-shell #page-orbitmap.active {
   color: var(--ink-2);
   cursor: pointer;
   flex: 0 0 auto;
+  opacity: 0.7;
+  transition: opacity .15s, color .15s;
 }
-.ov-min:hover { color: var(--accent); }
+.ov-min:hover { color: var(--accent); opacity: 1; }
 
 .ov-float.minimised > *:not(.card-head) { display: none; }
-.ov-float.minimised { width: 292px; }
+.ov-float.minimised { width: 240px; }
+/* wfCard spans full-width when expanded; when minimised it collapses to a
+   narrow strip on the bottom-left (same position anchor, just shrunk). */
+#wfCard.minimised { width: 240px; }
 #satStatusCard .card-head { display: flex; align-items: center; gap: 8px; }
 
 /* The three visual toggles and the tick readout sit above the earth.
@@ -330,7 +339,7 @@ body.no-scroll-shell #page-orbitmap.active {
    every other page that needs real page-length scrolling. */
 body.no-scroll-shell:has(#page-overview.active) .layout,
 body.no-scroll-shell:has(#page-orbitmap.active) .layout {
-  height: calc(100vh - 110px);
+  height: calc(100vh - 96px);
   min-height: 0;
 }
 body.no-scroll-shell:has(#page-overview.active) .main,

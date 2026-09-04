@@ -170,12 +170,16 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
-    $('page-' + btn.dataset.page).classList.add('active');
+    const target = $('page-' + btn.dataset.page);
+    if (target) target.classList.add('active');
     // Stop rendering work for pages the user has navigated away from.
     if (window.orbitMapSetPageActive) window.orbitMapSetPageActive(btn.dataset.page === 'orbitmap');
     if (window.heroSetPageActive) window.heroSetPageActive(btn.dataset.page === 'overview');
     if (btn.dataset.page === 'telemetry') { drawAllCharts(); renderRollingAnalysis(); renderHealth(); }
     if (btn.dataset.page === 'anomalies') renderAnomalies();
+    if (btn.dataset.page === 'workflow') renderWorkflow();
+    if (btn.dataset.page === 'simulations') loadScenarios();
+    if (btn.dataset.page === 'reports') loadRunbooks();
     if (btn.dataset.page === 'memory') loadMemory();
     if (btn.dataset.page === 'audit') loadAuditLogs();
   });
@@ -185,6 +189,16 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 $('satStatusMin')?.addEventListener('click', () => {
   const card = $('satStatusCard');
   const btn = $('satStatusMin');
+  const min = card.classList.toggle('minimised');
+  btn.textContent = min ? '+' : '−';
+  btn.title = min ? 'Expand' : 'Minimise';
+  btn.setAttribute('aria-expanded', String(!min));
+});
+
+/* ---------------- Overview: minimise the Workflow Progress panel ---------------- */
+$('wfMin')?.addEventListener('click', () => {
+  const card = $('wfCard');
+  const btn = $('wfMin');
   const min = card.classList.toggle('minimised');
   btn.textContent = min ? '+' : '−';
   btn.title = min ? 'Expand' : 'Minimise';
@@ -272,6 +286,7 @@ function handleMessage(msg) {
     case 'incident_resolved': onIncidentResolved(d, msg.timestamp); break;
     case 'approval_required': onApprovalRequired(d, msg.timestamp); break;
     case 'approval_decision': onApprovalDecision(d, msg.timestamp); break;
+    case 'sim_failure_fallback': onSimFailureFallback(d, msg.timestamp); break;
     case 'runbook_ready': onRunbookReady(d, msg.timestamp); break;
   }
 }
@@ -283,11 +298,18 @@ function onConnected(status) {
   $('setBackendInfo').textContent = `AETHER Multi-Agent Satellite Server · Mode: ${status.llm_mode || 'LOCAL'}`;
   (status.activity_log || []).forEach(a =>
     addLog(a.level === 'warning' ? 'WARN' : a.level === 'success' ? 'OK' : 'INFO', `${a.agent}: ${a.message}`, a.timestamp));
+  const agentLog = $('agentLog');
+  if (agentLog && (status.activity_log || []).length) {
+    agentLog.innerHTML = status.activity_log.map(a => `<div class="log-line"><span class="log-time">${fmtTime(a.timestamp)}</span>
+      <span class="log-level INFO">[${esc(a.agent)}]</span><span class="log-msg">${esc(a.message)}</span></div>`).join('');
+    agentLog.scrollTop = agentLog.scrollHeight;
+  }
   (status.active_anomalies || []).forEach(a => { anomalies.set(a.id, { ...a, status: 'DETECTED' }); });
   runbooks = status.runbooks || [];
   runbooksIssued = runbooks.length;
   renderAnomalies(); renderRunbookList();
   loadScenarios();
+  loadRunbooks();
   loadMemory();
   loadAuditLogs();
 }
@@ -764,6 +786,7 @@ function onIncidentResolved(d, ts) {
   addLog('OK', `Incident ${incId} concluded [${d.outcome}] & indexed into RAG memory`, ts);
   notify(`Incident ${incId} resolved and stored in RAG memory`, 'info');
   wfSet(8, 'done', `Incident resolved: ${d.outcome}`, ts);
+  hideApprovalToast();
   renderAnomalies();
   loadMemory();
   loadAuditLogs();
@@ -776,8 +799,10 @@ function onApprovalRequired(d, ts) {
   if (a) a.status = 'AWAITING APPROVAL';
   addLog('WARN', `Operator approval required for ${d.incident_id || d.anomaly_id} [${d.severity}] (Score: ${d.criticality_score}/100)`, ts);
   notify(`Approval required: ${d.incident_id || d.anomaly_id} — ${d.severity} (Score ${d.criticality_score}/100)`, 'warn');
-  wfSet(7, 'active', `⚠ ${d.severity} anomaly — awaiting human approval on Anomalies page`);
-  renderAnomalies(); renderApproval();
+  wfSet(7, 'active', `⚠ ${d.severity} anomaly — awaiting human approval`);
+  renderAnomalies();
+  renderApproval();
+  renderApprovalToast(d);
 }
 
 function onApprovalDecision(d, ts) {
@@ -786,7 +811,105 @@ function onApprovalDecision(d, ts) {
   if (a) a.status = d.approved ? 'APPROVED' : 'DENIED';
   addLog(d.approved ? 'OK' : 'WARN', d.approved ? `Action approved for ${incId}` : `Action DENIED for ${incId}: ${d.reason || ''}`, ts);
   pendingApprovals.delete(incId);
-  renderAnomalies(); renderApproval();
+  hideApprovalToast();
+  renderAnomalies();
+  renderApproval();
+}
+
+function onSimFailureFallback(d, ts) {
+  const incId = d.incident_id || 'INC-UNKNOWN';
+  addLog('WARN', `Digital twin physics simulation diverged for ${incId}! Falling back to Rule-Based System…`, ts);
+  notify(`Simulation failed for ${incId} — engaged Rule-Based System fallback`, 'warn');
+  wfSet(4, 'active', '⚡ Sim diverged → Dropping to Rule-Based System…', ts);
+}
+
+/* ---------------- Global Cross-Page Approval Toast ---------------- */
+function renderApprovalToast(d) {
+  const toast = $('approvalToast');
+  if (!toast) return;
+
+  const anoId = d.incident_id || d.anomaly_id;
+  const isCritical = d.severity === 'CRITICAL' || (d.criticality_score && d.criticality_score >= 85);
+  const cand = d.candidate || (d.candidates && d.candidates[0]) || {};
+  const isFallback = d.fallback_mode === 'RULE_BASED';
+
+  const subEl = $('apprToastSub');
+  if (subEl) {
+    if (isFallback) {
+      subEl.innerHTML = `<span style="color:var(--amber);font-weight:600">⚡ SIMULATION FAILED → Rule-Based Fallback</span> (Confidence: <b>${d.solution_pct || 50}%</b> ≤ 60%)`;
+    } else {
+      subEl.textContent = `Anomaly [${d.severity || 'HIGH'}] · Criticality: ${d.criticality_score || '—'}/100`;
+    }
+  }
+
+  const bodyEl = $('apprToastBody');
+  if (bodyEl) {
+    const diagSummary = d.diagnosis?.summary || d.reason || 'Anomaly requires verified operator recovery approval.';
+    const candName = cand.name || 'Emergency Stabilization Procedure';
+    const candCmd = (cand.commands || []).map(c => c.command).join(', ') || 'EXEC_RECOVERY';
+
+    bodyEl.innerHTML = `
+      <div class="toast-row">
+        <span style="color:var(--muted)">Incident:</span>
+        <span style="font-family:var(--mono);font-weight:700;color:var(--accent)">${esc(anoId)}</span>
+      </div>
+      <div style="margin:4px 0 6px 0;font-size:11.5px;color:var(--text2);line-height:1.4">
+        ${esc(diagSummary)}
+      </div>
+      <div class="toast-row" style="background:rgba(255,255,255,0.04);padding:4px 6px;border-radius:4px;margin-top:6px">
+        <span style="color:var(--muted)">Procedure:</span>
+        <span style="color:var(--text);font-weight:600">${esc(candName)}</span>
+      </div>
+      <div class="toast-row" style="margin-top:3px;font-size:11px">
+        <span style="color:var(--muted)">Command:</span>
+        <span style="font-family:var(--mono);color:var(--amber)">${esc(candCmd)}</span>
+      </div>
+    `;
+  }
+
+  const btnApprove = $('apprToastApprove');
+  if (btnApprove) {
+    btnApprove.onclick = async () => {
+      btnApprove.disabled = true;
+      btnApprove.textContent = 'Approving…';
+      await window.approveProc(anoId, cand.action_id);
+      hideApprovalToast();
+    };
+    btnApprove.disabled = false;
+    btnApprove.textContent = isCritical ? '🛡️ Authorize' : '✓ Approve';
+  }
+
+  const btnReject = $('apprToastReject');
+  if (btnReject) {
+    btnReject.onclick = async () => {
+      btnReject.disabled = true;
+      btnReject.textContent = 'Rejecting…';
+      await window.rejectProc(anoId);
+      hideApprovalToast();
+    };
+    btnReject.disabled = false;
+    btnReject.textContent = '✕ Reject';
+  }
+
+  const btnGoto = $('apprToastGoto');
+  if (btnGoto) {
+    btnGoto.onclick = () => {
+      switchPage('anomalies');
+      $('approvalCard')?.scrollIntoView({ behavior: 'smooth' });
+    };
+  }
+
+  const btnClose = $('apprToastClose');
+  if (btnClose) {
+    btnClose.onclick = () => hideApprovalToast();
+  }
+
+  toast.style.display = 'block';
+}
+
+function hideApprovalToast() {
+  const toast = $('approvalToast');
+  if (toast) toast.style.display = 'none';
 }
 
 function onRunbookReady(d, ts) {
@@ -835,7 +958,15 @@ function renderApproval() {
   $('apprAnoId').textContent = `${anoId} [${entry.severity} — Score ${entry.criticality_score}/100]`;
 
   let bannerHTML = '';
-  if (isCritical) {
+  if (entry.fallback_mode === 'RULE_BASED') {
+    bannerHTML = `<div class="appr-critical-banner" style="background:rgba(245,158,11,.18);border-color:rgba(245,158,11,.6)">
+      <span class="icon">⚡</span>
+      <div class="txt">
+        <b>SIMULATION FAILED — DETERMINISTIC RULE-BASED SYSTEM FALLBACK</b><br>
+        Digital twin physics simulation diverged. Rule-based recovery evaluated at <b>${entry.solution_pct || 50}%</b> confidence (&le; 60% safety threshold). Explicit human approval required before execution.
+      </div>
+    </div>`;
+  } else if (isCritical) {
     bannerHTML = `<div class="appr-critical-banner">
       <span class="icon">🛑</span>
       <div class="txt">
@@ -890,6 +1021,7 @@ window.approveProc = async (id, actionId) => {
     await fetch(url, { method: 'POST' });
     addLog('OK', `Authorization transmitted for ${id}`);
     pendingApprovals.delete(id);
+    hideApprovalToast();
     renderApproval();
   } catch (e) { addLog('ERROR', 'Approval failed: ' + e.message); }
 };
@@ -899,9 +1031,40 @@ window.rejectProc = async (id) => {
     await fetch(`/api/reject/${id}`, { method: 'POST' });
     addLog('WARN', `Manual rejection sent for ${id} — holding in safe configuration`);
     pendingApprovals.delete(id);
+    hideApprovalToast();
     renderApproval();
   } catch (e) { addLog('ERROR', 'Rejection failed: ' + e.message); }
 };
+
+/* ---------------- Manual Force Sim Failure Toggle ---------------- */
+let simFailArmed = false;
+$('btnSimFailToggle')?.addEventListener('click', async () => {
+  try {
+    simFailArmed = !simFailArmed;
+    const btn = $('btnSimFailToggle');
+    if (simFailArmed) {
+      await fetch('/api/sim/trigger-failure', { method: 'POST' });
+      if (btn) {
+        btn.style.borderColor = 'var(--amber)';
+        btn.style.color = 'var(--amber)';
+        btn.style.background = 'rgba(240,167,50,0.15)';
+        btn.textContent = '⚠️ Sim Fail: ARMED';
+      }
+      notify('Next simulation will fail and drop to Rule-Based System (with 60% threshold)', 'warn');
+      addLog('WARN', 'Operator armed manual simulation failure trigger — next simulation will fall back to Rule-Based System');
+    } else {
+      if (btn) {
+        btn.style.borderColor = '';
+        btn.style.color = '';
+        btn.style.background = '';
+        btn.textContent = '⚠️ Force Sim Failure';
+      }
+      notify('Sim failure disarmed', 'info');
+    }
+  } catch (e) {
+    notify('Failed to trigger sim failure: ' + e.message, 'crit');
+  }
+});
 
 /* ---------------- Inject / simulations ---------------- */
 let simRunning = null;
@@ -951,8 +1114,21 @@ $('injectClose').addEventListener('click', () => $('injectModal').classList.remo
 
 /* ---------------- Reports / runbooks ---------------- */
 let currentRunbook = null;
+async function loadRunbooks() {
+  try {
+    const r = await fetch('/api/runbooks');
+    const d = await r.json();
+    runbooks = d.runbooks || [];
+    runbooksIssued = runbooks.length;
+    renderRunbookList();
+  } catch (e) {
+    console.error('Failed to load runbooks:', e);
+  }
+}
+
 function renderRunbookList() {
   const list = $('runbookList');
+  if (!list) return;
   if (!runbooks.length) { list.innerHTML = '<p class="empty-msg show">No runbooks yet — they are generated automatically when the pipeline resolves an anomaly.</p>'; return; }
   list.innerHTML = [...runbooks].reverse().map(r => `
     <div class="rb-item ${currentRunbook === r.filename ? 'sel' : ''}" onclick="openRunbook('${esc(r.filename)}')">
@@ -981,6 +1157,7 @@ let runbookView = 'rendered';
 
 function paintRunbook() {
   const body = $('runbookBody');
+  if (!body) return;
   if (runbookView === 'rendered') {
     body.classList.add('md-rendered');
     body.innerHTML = AetherMD.render(runbookSource);
@@ -988,12 +1165,12 @@ function paintRunbook() {
     body.classList.remove('md-rendered');
     body.textContent = runbookSource || '(empty)';
   }
-  $('mdViewRendered').classList.toggle('active', runbookView === 'rendered');
-  $('mdViewSource').classList.toggle('active', runbookView === 'source');
+  $('mdViewRendered')?.classList.toggle('active', runbookView === 'rendered');
+  $('mdViewSource')?.classList.toggle('active', runbookView === 'source');
 }
 
-$('mdViewRendered').addEventListener('click', () => { runbookView = 'rendered'; paintRunbook(); });
-$('mdViewSource').addEventListener('click', () => { runbookView = 'source'; paintRunbook(); });
+$('mdViewRendered')?.addEventListener('click', () => { runbookView = 'rendered'; paintRunbook(); });
+$('mdViewSource')?.addEventListener('click', () => { runbookView = 'source'; paintRunbook(); });
 
 /* Cross-fade a readout instead of snapping it. Used by the Overview panel. */
 function setReadout(id, text) {
@@ -1004,12 +1181,9 @@ function setReadout(id, text) {
   void el.offsetWidth;          // force reflow so the animation re-runs
   el.classList.add('val-swap');
 }
-$('reportRefresh').addEventListener('click', async () => {
-  try {
-    const r = await fetch('/api/runbooks'); const d = await r.json();
-    runbooks = d.runbooks || []; renderRunbookList();
-    toast('Runbook list refreshed', 'ok');
-  } catch (e) { addLog('ERROR', 'Refresh failed: ' + e.message); }
+$('reportRefresh')?.addEventListener('click', async () => {
+  await loadRunbooks();
+  toast('Runbook list refreshed', 'ok');
 });
 
 /* ---------------- Command console ---------------- */
@@ -1201,9 +1375,9 @@ $('setReset').addEventListener('click', () => {
 /* ---------------- Space canvas (Earth + satellite) ---------------- */
 const stars = [];
 const vis = { orbit: true, grid: false, anim: true, angle: 0 };
-$('vcOrbit').addEventListener('click', e => { vis.orbit = !vis.orbit; e.currentTarget.classList.toggle('active', vis.orbit); });
-$('vcGrid').addEventListener('click', e => { vis.grid = !vis.grid; e.currentTarget.classList.toggle('active', vis.grid); });
-$('vc3d').addEventListener('click', e => { vis.anim = !vis.anim; e.currentTarget.classList.toggle('active', vis.anim); });
+$('vcOrbit')?.addEventListener('click', e => { vis.orbit = !vis.orbit; e.currentTarget.classList.toggle('active', vis.orbit); });
+$('vcGrid')?.addEventListener('click', e => { vis.grid = !vis.grid; e.currentTarget.classList.toggle('active', vis.grid); });
+$('vc3d')?.addEventListener('click', e => { vis.anim = !vis.anim; e.currentTarget.classList.toggle('active', vis.anim); });
 
 function drawSpace() {
   const cv = $('spaceCanvas');
@@ -1309,7 +1483,7 @@ async function loadMemory() {
     if ($('memRecovered')) $('memRecovered').textContent = stats.recovered_incidents || 0;
     if ($('memProcedures')) $('memProcedures').textContent = stats.total_procedures || 0;
 
-    const incRes = await fetch('/api/memory/incidents?k=25');
+    const incRes = await fetch('/api/memory/incidents?k=250');
     const incData = await incRes.json();
     memIncidents = incData.incidents || [];
 
@@ -1329,7 +1503,7 @@ function renderMemory() {
   const q = ($('memSearch')?.value || '').toLowerCase().trim();
 
   if (memActiveTab === 'incidents') {
-    const list = q ? memIncidents.filter(i => (i.anomaly + ' ' + i.root_cause + ' ' + i.subsystem + ' ' + (i.solution||'')).toLowerCase().includes(q)) : memIncidents;
+    const list = q ? memIncidents.filter(i => ((i.anomaly||'') + ' ' + (i.root_cause||'') + ' ' + (i.subsystem||'') + ' ' + (i.solution||'')).toLowerCase().includes(q)) : memIncidents;
     if (!list.length) {
       container.innerHTML = '<div class="empty-msg show">No episodic incidents matching search</div>';
       return;
@@ -1402,7 +1576,7 @@ if ($('memRefresh')) $('memRefresh').addEventListener('click', () => { loadMemor
 let auditEntries = [];
 async function loadAuditLogs() {
   try {
-    const res = await fetch('/api/audit?limit=60');
+    const res = await fetch('/api/audit?limit=100');
     const data = await res.json();
     auditEntries = data.audit_logs || [];
     renderAuditTable();
@@ -1446,6 +1620,15 @@ renderWorkflow();
 wfReset();
 renderNotifs();
 renderSimHistory();
-addLog('INFO', 'VORTEX dashboard initialized — establishing uplink…');
+loadScenarios();
+loadRunbooks();
+loadMemory();
+loadAuditLogs();
+const initialAgentLog = $('agentLog');
+if (initialAgentLog && !initialAgentLog.innerHTML.trim()) {
+  initialAgentLog.innerHTML = `<div class="log-line"><span class="log-time">${fmtTime()}</span> <span class="log-level INFO">[SYSTEM]</span><span class="log-msg">Workflow engine active — 5 autonomous agents standing by. Telemetry uplink established.</span></div>`;
+}
+addLog('INFO', 'AETHER by VORTEX dashboard initialized — establishing uplink…');
 connectWS();
 requestAnimationFrame(drawSpace);
+

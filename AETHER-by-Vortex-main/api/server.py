@@ -129,6 +129,28 @@ def create_app(orchestrator: MissionOrchestrator) -> FastAPI:
         return {"rejected": True, "anomaly_id": anomaly_id, "reason": reason}
 
     # -------------------------------------------------------------
+    # Simulation Failure & Rule-Based Fallback Controls
+    # -------------------------------------------------------------
+    @app.post("/api/sim/trigger-failure")
+    async def trigger_sim_failure(target_pct: Optional[float] = None):
+        orchestrator.force_sim_failure = True
+        orchestrator.force_sim_solution_pct = target_pct
+        orchestrator.simulator_agent.trigger_failure(target_pct)
+        return {
+            "status": "ok",
+            "message": "Next simulation will fail and fall back to deterministic Rule-Based System.",
+            "target_pct": target_pct
+        }
+
+    @app.get("/api/sim/status")
+    async def get_sim_status():
+        return {
+            "force_sim_failure": getattr(orchestrator, "force_sim_failure", False),
+            "force_sim_solution_pct": getattr(orchestrator, "force_sim_solution_pct", None),
+            "random_failure_rate": getattr(orchestrator.simulator_agent, "SIMULATION_FAILURE_RATE", 0.12)
+        }
+
+    # -------------------------------------------------------------
     # RAG Memory & Learning Loop Endpoints
     # -------------------------------------------------------------
     @app.get("/api/memory/incidents")
@@ -204,7 +226,22 @@ def create_app(orchestrator: MissionOrchestrator) -> FastAPI:
 
     @app.get("/api/runbooks")
     async def list_runbooks():
-        return {"runbooks": orchestrator.runbooks}
+        from datetime import datetime, timezone
+        rbs = list(orchestrator.runbooks)
+        seen = {r.get("filename") for r in rbs if "filename" in r}
+        if RUNBOOK_DIR.exists():
+            for p in sorted(RUNBOOK_DIR.glob("runbook_*.md"), reverse=True):
+                if p.name not in seen:
+                    parts = p.stem.split("_")
+                    ano_id = parts[1] if len(parts) > 1 else "ANO-ARCHIVED"
+                    mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+                    rbs.append({
+                        "filename": p.name,
+                        "anomaly_id": ano_id,
+                        "generated_at": mtime
+                    })
+                    seen.add(p.name)
+        return {"runbooks": rbs}
 
     @app.get("/api/runbooks/{filename}")
     async def get_runbook(filename: str):
