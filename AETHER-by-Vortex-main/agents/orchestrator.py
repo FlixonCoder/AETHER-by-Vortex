@@ -220,7 +220,9 @@ class MissionOrchestrator:
         self.monitor_busy = True
         try:
             orbital_ctx = self.simulator.orbital_context()
-            anomaly = await self.watcher.analyze(snap, history, orbital_ctx)
+            active_ano = self.simulator.get_active_anomaly()
+            hint = active_ano.get("key") if active_ano else None
+            anomaly = await self.watcher.analyze(snap, history, orbital_ctx, anomaly_type_hint=hint)
 
             if anomaly and anomaly.get("anomaly_detected"):
                 if not self._is_duplicate_anomaly(anomaly):
@@ -474,6 +476,8 @@ class MissionOrchestrator:
                     output_data=validation,
                     criticality=criticality_ctx
                 )
+                eval_candidates = [x["candidate"] for x in rule_evals]
+                eval_sims = [x["rule_sim"] for x in rule_evals]
                 self.pending_approvals[inc_id] = {
                     "incident_id": inc_id,
                     "anomaly": anomaly,
@@ -481,8 +485,8 @@ class MissionOrchestrator:
                     "candidate": chosen_candidate,
                     "simulation": chosen_sim,
                     "validation": validation,
-                    "candidates": candidates,
-                    "simulations": simulations,
+                    "candidates": eval_candidates,
+                    "simulations": eval_sims,
                     "fallback_mode": "RULE_BASED",
                     "solution_pct": best_sol_pct,
                     "attempt": attempt,
@@ -500,8 +504,8 @@ class MissionOrchestrator:
                         "diagnosis": diagnosis,
                         "candidate": chosen_candidate,
                         "simulation": chosen_sim,
-                        "candidates": candidates,
-                        "simulations": simulations,
+                        "candidates": eval_candidates,
+                        "simulations": eval_sims,
                         "fallback_mode": "RULE_BASED",
                         "solution_pct": best_sol_pct,
                         "reason": f"Simulation failed → Rule-based solution confidence {best_sol_pct}% (≤ 60% threshold)"
@@ -685,10 +689,10 @@ class MissionOrchestrator:
 
         self._log_activity("OPERATOR", f"Human operator authorized action '{chosen_candidate.get('name')}' for {anomaly_id}", "success")
 
-        # Re-validate with is_human_authorized = True. baseline_check is
-        # still enforced here — human authorization overrides the
-        # criticality-based oversight requirement, never a failed safety
-        # check (whitelist, simulation safety, or baseline).
+        # Re-validate with is_human_authorized = True. Hard safety checks
+        # (whitelist, unsafe simulation, risk ceiling, critical telemetry floors)
+        # remain absolute blocks. Baseline side-effect warnings are SOFT and are
+        # waived by operator authorization — the validator records them as waived.
         validation = self.validator.validate_action(
             candidate_action=chosen_candidate,
             simulation_result=chosen_sim,

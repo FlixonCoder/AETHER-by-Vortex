@@ -797,8 +797,23 @@ function onApprovalRequired(d, ts) {
   pendingApprovals.set(d.incident_id || d.anomaly_id, d);
   const a = anomalies.get(d.incident_id || d.anomaly_id);
   if (a) a.status = 'AWAITING APPROVAL';
-  addLog('WARN', `Operator approval required for ${d.incident_id || d.anomaly_id} [${d.severity}] (Score: ${d.criticality_score}/100)`, ts);
-  notify(`Approval required: ${d.incident_id || d.anomaly_id} — ${d.severity} (Score ${d.criticality_score}/100)`, 'warn');
+  const anoId = d.incident_id || d.anomaly_id;
+  const cands = (d.candidates && d.candidates.length) ? d.candidates : (d.candidate ? [d.candidate] : []);
+
+  addLog('WARN', `Operator approval required for ${anoId} [${d.severity}] (Score: ${d.criticality_score}/100)`, ts);
+
+  if (cands.length > 1) {
+    notify(`Approval required for ${anoId} [${d.severity}]: ${cands.length} solutions proposed`, 'warn');
+    cands.forEach((c, i) => {
+      const pName = c.name || `Procedure ${i + 1}`;
+      const cmds = (c.commands || []).map(x => x.command).join(', ');
+      notify(`Option ${i + 1} for ${anoId}: ${pName} (${cmds}) · ${Math.round((c.estimated_recovery_probability || 0.9) * 100)}% recovery`, 'info');
+      addLog('INFO', `Candidate Solution ${i + 1}: ${pName} (${cmds})`, ts);
+    });
+  } else {
+    notify(`Approval required: ${anoId} — ${d.severity} (Score ${d.criticality_score}/100)`, 'warn');
+  }
+
   wfSet(7, 'active', `⚠ ${d.severity} anomaly — awaiting human approval`);
   renderAnomalies();
   renderApproval();
@@ -830,13 +845,15 @@ function renderApprovalToast(d) {
 
   const anoId = d.incident_id || d.anomaly_id;
   const isCritical = d.severity === 'CRITICAL' || (d.criticality_score && d.criticality_score >= 85);
-  const cand = d.candidate || (d.candidates && d.candidates[0]) || {};
+  const cands = (d.candidates && d.candidates.length) ? d.candidates : (d.candidate ? [d.candidate] : []);
   const isFallback = d.fallback_mode === 'RULE_BASED';
 
   const subEl = $('apprToastSub');
   if (subEl) {
     if (isFallback) {
       subEl.innerHTML = `<span style="color:var(--amber);font-weight:600">⚡ SIMULATION FAILED → Rule-Based Fallback</span> (Confidence: <b>${d.solution_pct || 50}%</b> ≤ 60%)`;
+    } else if (cands.length > 1) {
+      subEl.innerHTML = `Anomaly [${esc(d.severity || 'HIGH')}] · Score: ${d.criticality_score || '—'}/100 · <b style="color:var(--accent)">${cands.length} Solutions Available</b>`;
     } else {
       subEl.textContent = `Anomaly [${d.severity || 'HIGH'}] · Criticality: ${d.criticality_score || '—'}/100`;
     }
@@ -844,9 +861,38 @@ function renderApprovalToast(d) {
 
   const bodyEl = $('apprToastBody');
   if (bodyEl) {
-    const diagSummary = d.diagnosis?.summary || d.reason || 'Anomaly requires verified operator recovery approval.';
-    const candName = cand.name || 'Emergency Stabilization Procedure';
-    const candCmd = (cand.commands || []).map(c => c.command).join(', ') || 'EXEC_RECOVERY';
+    const diagSummary = d.diagnosis?.summary || d.reason || (d.diagnosis?.root_cause ? `Root cause: ${d.diagnosis.root_cause}` : 'Anomaly requires verified operator recovery approval.');
+
+    let candsHTML = '';
+    cands.forEach((c, idx) => {
+      const candName = c.name || `Recovery Procedure ${idx + 1}`;
+      const candCmd = (c.commands || []).map(x => x.command).join(', ') || 'EXEC_RECOVERY';
+      const candProb = Math.round((c.estimated_recovery_probability || 0.9) * 100);
+      const candRisk = c.risk || c.risk_level || 'LOW';
+      const candId = c.action_id || `ACT-0${idx + 1}`;
+      const optLabel = cands.length > 1 ? `Option ${idx + 1}` : 'Procedure';
+
+      candsHTML += `
+        <div class="toast-cand-card" style="${isCritical ? 'border-color:rgba(239,68,68,0.4)' : ''}">
+          <div class="toast-cand-head">
+            <span class="toast-cand-title">
+              ${cands.length > 1 ? `<span class="toast-cand-badge">OPTION ${idx + 1}</span>` : ''}
+              ${esc(candName)}
+            </span>
+            <span class="sev ${esc(candRisk)}" style="font-size:9.5px;padding:1px 6px;border-radius:3px">${esc(candRisk)} RISK</span>
+          </div>
+          ${c.description ? `<div class="toast-cand-desc">${esc(c.description)}</div>` : ''}
+          <div class="toast-cand-meta">
+            <span>Command: <code style="font-family:var(--mono);color:var(--amber)">${esc(candCmd)}</code></span>
+            <span>✅ ${candProb}% recovery</span>
+            <span>${c.reversible ? '↩ Reversible' : '⚠ Non-rev'}</span>
+          </div>
+          <button class="btn sm toast-cand-btn ${isCritical ? 'crit' : 'standard'}" data-action="${esc(candId)}" id="toastApproveBtn_${idx}">
+            ${isCritical ? '🛡️ Authorize' : '✓ Approve'} ${esc(optLabel)}
+          </button>
+        </div>
+      `;
+    });
 
     bodyEl.innerHTML = `
       <div class="toast-row">
@@ -856,27 +902,29 @@ function renderApprovalToast(d) {
       <div style="margin:4px 0 6px 0;font-size:11.5px;color:var(--text2);line-height:1.4">
         ${esc(diagSummary)}
       </div>
-      <div class="toast-row" style="background:rgba(255,255,255,0.04);padding:4px 6px;border-radius:4px;margin-top:6px">
-        <span style="color:var(--muted)">Procedure:</span>
-        <span style="color:var(--text);font-weight:600">${esc(candName)}</span>
-      </div>
-      <div class="toast-row" style="margin-top:3px;font-size:11px">
-        <span style="color:var(--muted)">Command:</span>
-        <span style="font-family:var(--mono);color:var(--amber)">${esc(candCmd)}</span>
+      <div class="toast-cands-container" style="margin-top:4px">
+        ${candsHTML}
       </div>
     `;
+
+    // Bind click events to each candidate approve button
+    cands.forEach((c, idx) => {
+      const btn = document.getElementById(`toastApproveBtn_${idx}`);
+      if (btn) {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.textContent = 'Transmitting…';
+          await window.approveProc(anoId, c.action_id);
+          hideApprovalToast();
+        };
+      }
+    });
   }
 
+  // Footer single approve button is hidden since each card has its own dedicated button
   const btnApprove = $('apprToastApprove');
   if (btnApprove) {
-    btnApprove.onclick = async () => {
-      btnApprove.disabled = true;
-      btnApprove.textContent = 'Approving…';
-      await window.approveProc(anoId, cand.action_id);
-      hideApprovalToast();
-    };
-    btnApprove.disabled = false;
-    btnApprove.textContent = isCritical ? '🛡️ Authorize' : '✓ Approve';
+    btnApprove.style.display = 'none';
   }
 
   const btnReject = $('apprToastReject');
@@ -888,7 +936,7 @@ function renderApprovalToast(d) {
       hideApprovalToast();
     };
     btnReject.disabled = false;
-    btnReject.textContent = '✕ Reject';
+    btnReject.textContent = '✕ Reject / Safe Hold';
   }
 
   const btnGoto = $('apprToastGoto');
@@ -989,12 +1037,14 @@ function renderApproval() {
     <p><b>Subsystem:</b> ${esc(entry.diagnosis?.subsystem || '—')} &nbsp;·&nbsp; <b>Confidence:</b> ${Math.round((entry.diagnosis?.confidence || 0.9) * 100)}%</p>`;
 
   const opts = entry.candidates || [entry.candidate];
-  $('apprOptions').innerHTML = opts.map(o => {
+  $('apprOptions').innerHTML = opts.map((o, idx) => {
     const cmdList = (o.commands || []).map(c => `<code>${esc(c.command)}</code>`).join(', ');
+    const optBadge = opts.length > 1 ? `<span class="toast-cand-badge" style="margin-right:6px">OPTION ${idx + 1}</span>` : '';
+    const btnLabel = opts.length > 1 ? (isCritical ? `🛡️ AUTHORIZE OPTION ${idx + 1}` : `✓ Approve Option ${idx + 1}`) : (isCritical ? '🛡️ AUTHORIZE EXECUTION' : '✓ Approve Procedure');
     return `
       <div class="appr-opt rec" style="${isCritical ? 'border-color:rgba(239,68,68,.6)' : ''}">
         <div class="appr-opt-head">
-          <span class="nm">${esc(o.name || 'Recovery Procedure')}</span>
+          <span class="nm">${optBadge}${esc(o.name || 'Recovery Procedure')}</span>
           <span class="sev ${esc(o.risk || o.risk_level || 'LOW')}">${esc(o.risk || o.risk_level || 'LOW')} RISK</span>
         </div>
         <div class="desc" style="font-size:12px;color:var(--muted);margin:6px 0">${esc(o.description || '')}</div>
@@ -1005,7 +1055,7 @@ function renderApproval() {
         </div>
         <div class="appr-actions-row">
           <button class="btn sm ${isCritical ? 'danger' : ''}" onclick="approveProc('${esc(anoId)}','${esc(o.action_id)}')">
-            ${isCritical ? '🛡️ AUTHORIZE EXECUTION' : '✓ Approve Procedure'}
+            ${btnLabel}
           </button>
           <button class="btn sm" style="background:rgba(255,255,255,.08)" onclick="rejectProc('${esc(anoId)}')">
             ✕ Reject / Safe Hold

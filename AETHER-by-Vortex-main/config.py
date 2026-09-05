@@ -11,6 +11,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 MEMORY_DIR = BASE_DIR / "memory"
 AUDIT_DIR = BASE_DIR / "audit"
 RUNBOOK_DIR = BASE_DIR / "runbooks"
+ML_MODEL_DIR = BASE_DIR / "model" / "models"
 
 for _d in (MEMORY_DIR, AUDIT_DIR, RUNBOOK_DIR):
     _d.mkdir(parents=True, exist_ok=True)

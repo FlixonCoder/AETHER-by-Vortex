@@ -7,7 +7,7 @@ CRITICAL INVARIANT:
 The LLM can NEVER override, downgrade, or bypass this engine's decision.
 """
 from typing import Any, Dict, List, Optional
-from config import CRITICALITY_POLICIES, CRITICALITY_THRESHOLDS, TELEMETRY_PARAMS
+from config import ANOMALY_SCENARIOS, CRITICALITY_POLICIES, CRITICALITY_THRESHOLDS, TELEMETRY_PARAMS
 
 # Subsystem weight multipliers (out of 30 pts)
 SUBSYSTEM_WEIGHTS = {
@@ -31,7 +31,9 @@ class CriticalityEngine:
         current_telemetry: Dict[str, float],
         history: Dict[str, List[dict]],
         orbital_ctx: Optional[dict] = None,
-        rag_similar_incidents: Optional[List[dict]] = None
+        rag_similar_incidents: Optional[List[dict]] = None,
+        anomaly_type: Optional[str] = None,
+        baseline_severity: Optional[str] = None
     ) -> dict:
         subsys_upper = subsystem.upper() if subsystem else "OBC"
         subsys_weight = SUBSYSTEM_WEIGHTS.get(subsys_upper, 20.0)
@@ -40,14 +42,6 @@ class CriticalityEngine:
         score_subsystem = subsys_weight
 
         # Factor 2: Telemetry deviation severity (0 - 32 pts)
-        # Cap raised from 25: at the old cap, even a total comms blackout
-        # (SNR -> 0, packet loss -> 100%) landed at the same 25 points as a
-        # merely-serious deviation, and the four non-contextual factors summed
-        # to a hard ceiling of 85 -- below the 90 needed for CRITICAL. A fault
-        # could only ever reach CRITICAL by getting lucky on eclipse timing and
-        # RAG history, never on raw severity alone. Verified against the real
-        # engine (calibrate.py) that this only moves scores already saturating
-        # the old cap -- mild/moderate deviations are unaffected.
         score_deviation = 0.0
         max_dev_ratio = 0.0
         for v in violations:
@@ -93,10 +87,42 @@ class CriticalityEngine:
             high_risk_matches = sum(1 for inc in rag_similar_incidents if inc.get("criticality") in ("HIGH", "CRITICAL"))
             score_history = min(5.0, high_risk_matches * 2.5)
 
-        # Raw composite score
+        # Raw composite telemetry score (0 - 100)
         total_raw = score_subsystem + score_deviation + score_multi_point + score_rate_of_change + score_context + score_history
-        # Bound to 0 - 100
-        criticality_score = int(max(5, min(100, round(total_raw))))
+
+        # Factor 7: Scenario Severity Continuity & Mission Invariant Alignment
+        target_sev = baseline_severity
+        if not target_sev and anomaly_type:
+            sc_info = ANOMALY_SCENARIOS.get(anomaly_type)
+            if sc_info:
+                target_sev = sc_info.get("severity")
+
+        if target_sev == "CRITICAL":
+            # Mission-critical fault (e.g. comms degradation/blackout).
+            # Floor must remain strictly in the CRITICAL bracket (90-100) to ensure
+            # Commander Approval policy is always enforced.
+            criticality_score = int(min(100, max(90, round(90.0 + (total_raw / 100.0) * 10.0))))
+        elif target_sev == "HIGH":
+            # High severity failure mode (70-89 bracket); extreme multi-point escalation allowed
+            if total_raw >= 90:
+                criticality_score = int(min(100, round(total_raw)))
+            else:
+                criticality_score = int(min(89, max(70, round(70.0 + (total_raw / 100.0) * 19.0))))
+        elif target_sev == "MEDIUM":
+            # Medium severity failure mode (40-69 bracket); high escalation allowed
+            if total_raw >= 70:
+                criticality_score = int(min(100, round(total_raw)))
+            else:
+                criticality_score = int(min(69, max(40, round(40.0 + (total_raw / 100.0) * 29.0))))
+        elif target_sev == "LOW":
+            # Low severity failure mode (0-39 bracket); auto-approval preserved unless catastrophic
+            if total_raw >= 85:
+                criticality_score = int(min(100, round(total_raw)))
+            else:
+                criticality_score = int(min(39, max(10, round(10.0 + (total_raw / 100.0) * 29.0))))
+        else:
+            # Unclassified or unmodeled anomaly: pure mathematical composite
+            criticality_score = int(max(5, min(100, round(total_raw))))
 
         # Determine classification
         if criticality_score >= 90:
@@ -110,6 +136,11 @@ class CriticalityEngine:
 
         policy = CRITICALITY_POLICIES.get(severity, "HUMAN_APPROVAL_REQUIRED")
 
+        if target_sev:
+            explanation = f"Score {criticality_score}/100 [{severity}] anchored to {anomaly_type or target_sev} ({target_sev}) mission profile and {subsystem} telemetry."
+        else:
+            explanation = f"Score {criticality_score}/100 [{severity}] governed by {subsystem} priority and {viol_count} active violation(s)."
+
         return {
             "criticality_score": criticality_score,
             "severity": severity,
@@ -122,7 +153,8 @@ class CriticalityEngine:
                 "multi_point_violations": round(score_multi_point, 1),
                 "rate_of_change": round(score_rate_of_change, 1),
                 "mission_context": round(score_context, 1),
-                "historical_frequency": round(score_history, 1)
+                "historical_frequency": round(score_history, 1),
+                "scenario_alignment": target_sev or "DYNAMIC"
             },
-            "explanation": f"Score {criticality_score}/100 [{severity}] governed by {subsystem} priority and {viol_count} active violation(s)."
+            "explanation": explanation
         }

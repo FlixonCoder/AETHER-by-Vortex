@@ -592,7 +592,9 @@ td.warn{color:var(--amber)}td.bad{color:var(--red)}
   bottom: 24px;
   right: 24px;
   z-index: 10000;
-  max-width: 440px;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
   width: calc(100vw - 48px);
   animation: toastSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(240, 167, 50, 0.35);
@@ -701,4 +703,86 @@ td.warn{color:var(--amber)}td.bad{color:var(--red)}
 .appr-toast-actions .link-btn {
   margin-left: auto;
   font-size: 11px;
+}
+
+/* Multi-solution candidate cards inside approval popup toast */
+.toast-cand-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 8px;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+}
+.toast-cand-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(240, 167, 50, 0.5);
+  transform: translateY(-1px);
+}
+.toast-cand-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+.toast-cand-title {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.toast-cand-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(37, 214, 245, 0.12);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(37, 214, 245, 0.25);
+}
+.toast-cand-desc {
+  font-size: 11.5px;
+  color: var(--text2);
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+.toast-cand-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.toast-cand-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 11.5px;
+  padding: 6px 12px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+.toast-cand-btn.crit {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: var(--red);
+}
+.toast-cand-btn.crit:hover {
+  background: rgba(239, 68, 68, 0.32);
+  border-color: var(--red);
+}
+.toast-cand-btn.standard {
+  background: rgba(63, 207, 110, 0.15);
+  border-color: rgba(63, 207, 110, 0.5);
+  color: var(--green);
+}
+.toast-cand-btn.standard:hover {
+  background: rgba(63, 207, 110, 0.28);
+  border-color: var(--green);
 }
