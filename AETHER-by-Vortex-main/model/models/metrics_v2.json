@@ -1,0 +1,297 @@
+{
+  "isolation_forest_roc_auc": 0.9942272,
+  "isolation_forest_binary_accuracy": 0.972,
+  "isolation_forest_report": {
+    "nominal": {
+      "precision": 0.90625,
+      "recall": 0.928,
+      "f1-score": 0.9169960474308301,
+      "support": 125.0
+    },
+    "anomaly": {
+      "precision": 0.9855305466237942,
+      "recall": 0.9808,
+      "f1-score": 0.983159582999198,
+      "support": 625.0
+    },
+    "accuracy": 0.972,
+    "macro avg": {
+      "precision": 0.9458902733118971,
+      "recall": 0.9544,
+      "f1-score": 0.950077815215014,
+      "support": 750.0
+    },
+    "weighted avg": {
+      "precision": 0.9723171221864951,
+      "recall": 0.972,
+      "f1-score": 0.9721323270711367,
+      "support": 750.0
+    }
+  },
+  "random_forest_accuracy": 1.0,
+  "random_forest_report": {
+    "battery_overtemperature": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 62.0
+    },
+    "battery_undervoltage": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 62.0
+    },
+    "comms_degradation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 63.0
+    },
+    "gps_loss": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 63.0
+    },
+    "gyro_drift": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 63.0
+    },
+    "nominal": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 125.0
+    },
+    "obc_memory_overflow": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 62.0
+    },
+    "power_bus_overcurrent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 63.0
+    },
+    "rw_saturation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 62.0
+    },
+    "solar_array_degradation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 62.0
+    },
+    "solar_thermal_excursion": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 63.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 750.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 750.0
+    }
+  },
+  "confusion_matrix_labels": [
+    "battery_overtemperature",
+    "battery_undervoltage",
+    "comms_degradation",
+    "gps_loss",
+    "gyro_drift",
+    "nominal",
+    "obc_memory_overflow",
+    "power_bus_overcurrent",
+    "rw_saturation",
+    "solar_array_degradation",
+    "solar_thermal_excursion"
+  ],
+  "confusion_matrix": [
+    [
+      62,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      62,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      63,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      63,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      63,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      125,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      62,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      63,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      62,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      62,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      63
+    ]
+  ],
+  "top_features": {
+    "attitude_error_deg_range": 0.016647938673297773,
+    "attitude_error_deg_std": 0.016390166090104755,
+    "attitude_error_deg_max": 0.015430005610993301,
+    "temp_obc_c_slope": 0.014735266904207671,
+    "gyro_bias_dps_mean": 0.013389747745503526,
+    "temp_obc_c_std": 0.012377130870266161,
+    "attitude_error_deg_net_drift": 0.012188291613541664,
+    "attitude_error_deg_slope": 0.011984861022830175,
+    "gyro_bias_dps_std": 0.01179135835002944,
+    "gyro_bias_dps_max": 0.0116875155629861,
+    "gyro_bias_dps_net_drift": 0.011540934794292105,
+    "temp_obc_c_max": 0.01132524813043653,
+    "gyro_bias_dps_range": 0.0110795052405065,
+    "bus_power_w_slope": 0.010907875897556756,
+    "temp_obc_c_range": 0.010616397388412429
+  },
+  "latency_ms": {
+    "feature_extraction": 1.4473251719999922,
+    "model_inference_both_stages": 40.53615010150001,
+    "total_end_to_end": 41.983475273500005
+  },
+  "model_size_bytes": 6021098,
+  "n_channels": 20,
+  "n_anomaly_classes": 10,
+  "training_episodes": 3000
+}

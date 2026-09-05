@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from config import TELEMETRY_PARAMS
+from model.live_adapter import classify_from_live_telemetry
 from telemetry.simulator import TelemetrySnapshot
 from .criticality_engine import CriticalityEngine
 from .llm_provider import LLMProvider, safe_number
@@ -35,7 +36,8 @@ class WatcherAgent:
         self,
         snapshot: TelemetrySnapshot,
         history: Dict[str, List[dict]],
-        orbital_ctx: Optional[dict] = None
+        orbital_ctx: Optional[dict] = None,
+        anomaly_type_hint: Optional[str] = None
     ) -> Optional[dict]:
         violations = snapshot.violations()
         if not violations:
@@ -51,6 +53,9 @@ class WatcherAgent:
 
         # 2. Deterministic Fallback Classifier
         def _rule_fallback():
+            ml_result = classify_from_live_telemetry(snapshot.values, history, violations)
+            if ml_result is not None:
+                return ml_result
             return self.llm.rule_engine.watcher_classify(violations, snapshot.values)
 
         # 3. Prompt for LLM classification (Ollama -> Groq -> Rule Engine)
@@ -90,6 +95,8 @@ Respond ONLY with a valid JSON object (no markdown) with these exact keys:
             if subsys not in KNOWN_SUBSYSTEMS:
                 subsys = "OBC"
 
+        ano_type = anomaly_type_hint or classification.get("anomaly_type")
+
         # 4. DETERMINISTIC CRITICALITY ENGINE EVALUATION
         # Invariant: Criticality is calculated mathematically, NEVER dictated by LLM
         crit_eval = self.criticality_engine.evaluate(
@@ -98,7 +105,8 @@ Respond ONLY with a valid JSON object (no markdown) with these exact keys:
             current_telemetry=snapshot.values,
             history=history,
             orbital_ctx=orbital_ctx,
-            rag_similar_incidents=rag_matches
+            rag_similar_incidents=rag_matches,
+            anomaly_type=ano_type
         )
 
         evidence = [
