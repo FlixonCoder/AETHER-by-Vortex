@@ -64,10 +64,20 @@ let pktSeq = 1000;
 
 /* ---------------- Utils ---------------- */
 const pad = n => String(n).padStart(2, '0');
-function fmtTime(d) { d = d ? new Date(d) : new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function fmtTime(d) {
+  const dt = d === undefined ? new Date() : (d ? new Date(d) : null);
+  if (!dt || isNaN(dt.getTime())) return '—';
+  return `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+}
 function fmtDate(d) {
-  d = d || new Date();
-  return `${pad(d.getDate())} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}`;
+  const dt = d === undefined ? new Date() : (d ? new Date(d) : null);
+  if (!dt || isNaN(dt.getTime())) return '—';
+  return `${pad(dt.getDate())} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dt.getMonth()]} ${dt.getFullYear()}`;
+}
+function fmtDateTime(d) {
+  const dt = d === undefined ? new Date() : (d ? new Date(d) : null);
+  if (!dt || isNaN(dt.getTime())) return '—';
+  return `${fmtDate(dt)} ${fmtTime(dt)}`;
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function download(name, text, mime) {
@@ -165,6 +175,28 @@ function tickClock() {
 setInterval(tickClock, 1000); tickClock();
 
 /* ---------------- Navigation ---------------- */
+function switchPage(pageName) {
+  const btn = document.querySelector(`.nav-item[data-page="${pageName}"]`);
+  if (btn) {
+    btn.click();
+  } else {
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const target = $('page-' + pageName);
+    if (target) target.classList.add('active');
+    if (window.orbitMapSetPageActive) window.orbitMapSetPageActive(pageName === 'orbitmap');
+    if (window.heroSetPageActive) window.heroSetPageActive(pageName === 'overview');
+    if (pageName === 'telemetry') { drawAllCharts(); renderRollingAnalysis(); renderHealth(); }
+    if (pageName === 'anomalies') renderAnomalies();
+    if (pageName === 'workflow') renderWorkflow();
+    if (pageName === 'simulations') loadScenarios();
+    if (pageName === 'reports') loadRunbooks();
+    if (pageName === 'memory') loadMemory();
+    if (pageName === 'audit') loadAuditLogs();
+  }
+}
+window.switchPage = switchPage;
+
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -790,6 +822,14 @@ function onIncidentResolved(d, ts) {
   renderAnomalies();
   loadMemory();
   loadAuditLogs();
+  loadRunbooks();
+  simRunning = null;
+  renderSimGrid();
+  if (simHistory.length > 0 && simHistory[0].outcome === 'INJECTED') {
+    simHistory[0].outcome = d.outcome || 'RESOLVED';
+    try { localStorage.setItem('vortex_simhist', JSON.stringify(simHistory)); } catch (e) {}
+    renderSimHistory();
+  }
   setTimeout(() => wfReset(), 7000);
 }
 
@@ -962,8 +1002,15 @@ function hideApprovalToast() {
 
 function onRunbookReady(d, ts) {
   runbooksIssued++;
-  runbooks.push({ filename: d.filename, anomaly_id: d.anomaly_id, generated_at: d.generated_at, content: d.content });
+  const existingIdx = runbooks.findIndex(r => r.filename === d.filename);
+  if (existingIdx >= 0) {
+    runbooks[existingIdx] = { filename: d.filename, anomaly_id: d.anomaly_id, generated_at: d.generated_at, content: d.content };
+  } else {
+    runbooks.push({ filename: d.filename, anomaly_id: d.anomaly_id, generated_at: d.generated_at, content: d.content });
+  }
   renderRunbookList();
+  simRunning = null;
+  renderSimGrid();
 }
 
 /* ---------------- Anomalies page ---------------- */
@@ -1140,10 +1187,24 @@ window.runSim = async (key) => {
   renderSimGrid();
   addLog('WARN', `Injecting fault scenario: ${key}`);
   notify(`Simulation started: ${scenarioTitle(key)}`, 'warn');
-  try { await fetch(`/api/inject/${key}`, { method: 'POST' }); }
-  catch (e) { addLog('ERROR', 'Injection failed: ' + e.message); simRunning = null; renderSimGrid(); return; }
-  // watchdog: clear the "running" lock if pipeline never completes
-  setTimeout(() => { if (simRunning === key) { simRunning = null; renderSimGrid(); } }, 120000);
+  try {
+    const res = await fetch(`/api/inject/${key}`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const s = scenarios[key] || {};
+    simHistory.unshift({ t: new Date().toISOString(), key, sub: s.subsystem || '—', sev: s.severity || 'HIGH', outcome: 'INJECTED' });
+    if (simHistory.length > 50) simHistory.pop();
+    try { localStorage.setItem('vortex_simhist', JSON.stringify(simHistory)); } catch (e) {}
+    renderSimHistory();
+    // Redirect to Overview page so the operator sees the spacecraft and alerts
+    switchPage('overview');
+  } catch (e) {
+    addLog('ERROR', 'Injection failed: ' + e.message);
+  } finally {
+    setTimeout(() => {
+      simRunning = null;
+      renderSimGrid();
+    }, 1500);
+  }
 };
 function renderSimHistory() {
   $('simEmpty').classList.toggle('show', simHistory.length === 0);
@@ -1158,7 +1219,11 @@ function renderInjectList() {
       <div class="ds">${esc(s.description)}</div>
     </button>`).join('');
 }
-window.injectFromModal = (k) => { $('injectModal').classList.remove('open'); window.runSim(k); };
+window.injectFromModal = (k) => {
+  $('injectModal').classList.remove('open');
+  window.runSim(k);
+  switchPage('overview');
+};
 $('anoInjectBtn').addEventListener('click', () => $('injectModal').classList.add('open'));
 $('injectClose').addEventListener('click', () => $('injectModal').classList.remove('open'));
 
@@ -1183,7 +1248,7 @@ function renderRunbookList() {
   list.innerHTML = [...runbooks].reverse().map(r => `
     <div class="rb-item ${currentRunbook === r.filename ? 'sel' : ''}" onclick="openRunbook('${esc(r.filename)}')">
       <div class="fn">${esc(r.filename)}</div>
-      <div class="mt">${esc(r.anomaly_id)} · ${fmtTime(r.generated_at)}</div>
+      <div class="mt">${esc(r.anomaly_id)} · ${fmtDateTime(r.generated_at)}</div>
     </div>`).join('');
 }
 window.openRunbook = async (fn) => {

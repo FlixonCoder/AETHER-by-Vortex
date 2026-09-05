@@ -939,6 +939,25 @@ class MissionOrchestrator:
 
     async def inject_anomaly(self, scenario_key: str) -> dict:
         info = self.simulator.inject_anomaly(scenario_key)
+        subsys = info.get("subsystem", "")
+
+        # Forcefully clear any leftover state from a previous run of this
+        # subsystem so the watcher can re-detect the new injection immediately
+        # without being silently dropped by _is_duplicate_anomaly.
+        self.subsystems_in_flight.discard(subsys)
+        self.active_anomalies = [
+            a for a in self.active_anomalies
+            if a.get("primary_subsystem") != subsys
+        ]
+        # Also remove any pending approval for this subsystem so a fresh
+        # injection doesn't leave a zombie approval card on the dashboard.
+        stale_ids = [
+            k for k, v in self.pending_approvals.items()
+            if v.get("anomaly", {}).get("primary_subsystem") == subsys
+        ]
+        for k in stale_ids:
+            self.pending_approvals.pop(k, None)
+
         self._log_activity("OPERATOR", f"Injected fault scenario: {scenario_key}", "warning")
         await self._broadcast({"type": "agent_activity", "timestamp": _now(), "data": {"agent": "OPERATOR", "message": f"Injected fault: {scenario_key}"}})
         return info

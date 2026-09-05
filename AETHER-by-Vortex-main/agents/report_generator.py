@@ -89,7 +89,23 @@ class ReportGenerator:
     ) -> dict:
         """Generates operator-ready Markdown runbook and persists to disk."""
         now = datetime.now(timezone.utc)
-        now_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        detected_iso = anomaly.get("detected_at")
+        detected_display = ""
+        if detected_iso:
+            try:
+                dt_det = datetime.fromisoformat(detected_iso)
+                detected_display = dt_det.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                detected_display = str(detected_iso)
+
+        local_now_str = now.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        utc_now_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        time_display = f"{local_now_str} (Local) / {utc_now_str}"
+        if detected_display:
+            timing_line = f"**Detected At:** `{detected_display}` | **Report Generated:** `{time_display}`"
+        else:
+            timing_line = f"**Generated At:** `{time_display}`"
+
         ts_slug = now.strftime("%Y%m%d_%H%M%S")
         filename = f"runbook_{incident_id}_{ts_slug}.md"
 
@@ -122,7 +138,7 @@ class ReportGenerator:
 **Incident ID:** `{incident_id}`
 **Subsystem:** `{subsys}` | **Severity:** `{sev}` (Criticality Score: `{score}/100`)
 **Resolution Outcome:** `{outcome}` | **Solution Trust Score:** `{trust_display}`
-**Generated At:** `{now_str}`
+{timing_line}
 
 ---
 
@@ -186,5 +202,6 @@ Every agent stage below reports its own confidence in its own output; the soluti
             "filepath": str(filepath),
             "content": content,
             "approved_procedure": action_name,
-            "generated_at": now.isoformat()
+            "generated_at": now.isoformat(),
+            "detected_at": detected_iso or now.isoformat()
         }

@@ -234,11 +234,19 @@ def create_app(orchestrator: MissionOrchestrator) -> FastAPI:
                 if p.name not in seen:
                     parts = p.stem.split("_")
                     ano_id = parts[1] if len(parts) > 1 else "ANO-ARCHIVED"
-                    mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+                    gen_time = None
+                    if len(parts) >= 4 and len(parts[2]) == 8 and len(parts[3]) == 6:
+                        try:
+                            dt = datetime.strptime(f"{parts[2]}_{parts[3]}", "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+                            gen_time = dt.isoformat()
+                        except Exception:
+                            pass
+                    if not gen_time:
+                        gen_time = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
                     rbs.append({
                         "filename": p.name,
                         "anomaly_id": ano_id,
-                        "generated_at": mtime
+                        "generated_at": gen_time
                     })
                     seen.add(p.name)
         return {"runbooks": rbs}
